@@ -429,41 +429,104 @@
       if (++k > 16) clearInterval(groupRefit);
     }, 380);
   }
+  var GOLD = 2.399963229; // 黄金角
+
+  // クラスタ内: 重大性(半径)の大きい順に向日葵スパイラルへ置き、衝突緩和してローカル座標(_lx,_ly)を決める
+  function packCluster(members) {
+    var ms = members.slice().sort(function (a, b) { return b.r - a.r; });
+    var avg = 0; ms.forEach(function (m) { avg += m.r; }); avg = (avg / ms.length) || 4;
+    var c = avg * 2 + 6;
+    ms.forEach(function (m, i) {
+      var ang = i * GOLD, rad = c * Math.sqrt(i);
+      m._lx = Math.cos(ang) * rad; m._ly = Math.sin(ang) * rad;
+    });
+    for (var it = 0; it < 16; it++) {
+      for (var i = 0; i < ms.length; i++) {
+        for (var j = i + 1; j < ms.length; j++) {
+          var a = ms[i], b = ms[j];
+          var dx = b._lx - a._lx, dy = b._ly - a._ly;
+          var min = a.r + b.r + 3.5, dd = dx * dx + dy * dy;
+          if (dd > 0.0001 && dd < min * min) {
+            var dist = Math.sqrt(dd), push = (min - dist) / dist * 0.5;
+            var px = dx * push, py = dy * push;
+            a._lx -= px; a._ly -= py; b._lx += px; b._ly += py;
+          } else if (dd <= 0.0001) { a._lx -= 0.6; b._lx += 0.6; }
+        }
+      }
+    }
+  }
+
+  // クラスタ群を貪欲スパイラルで詰めて中心(cx,cy)を決める(大きいものから)
+  function placeClusters(groups) {
+    groups.forEach(function (g) {
+      var R = 0;
+      g.members.forEach(function (m) { var d = Math.sqrt(m._lx * m._lx + m._ly * m._ly) + m.r; if (d > R) R = d; });
+      g.rad = R + 34; // 枠パディング + 余白
+    });
+    var placed = [];
+    groups.forEach(function (g) {
+      if (!placed.length) { g.cx = 0; g.cy = 0; placed.push(g); return; }
+      var t = 0, done = false;
+      while (!done) {
+        t += 0.35;
+        var rr = 13 * Math.sqrt(t), ang = t * GOLD;
+        var cx = Math.cos(ang) * rr, cy = Math.sin(ang) * rr, ok = true;
+        for (var i = 0; i < placed.length; i++) {
+          var p = placed[i], dx = p.cx - cx, dy = p.cy - cy, md = p.rad + g.rad;
+          if (dx * dx + dy * dy < md * md) { ok = false; break; }
+        }
+        if (ok || t > 40000) { g.cx = cx; g.cy = cy; placed.push(g); done = true; }
+      }
+    });
+  }
+
+  // 種別 axis でトピックを枠に整列(丸=トピックのみ、種別=枠)
   function assignGroups(axis) {
-    nodes.forEach(function (n) { n.group = null; n.isGroupCenter = false; n.slotX = undefined; n.slotY = undefined; n.groupHue = undefined; });
-    if (axis === 'none') { graph.setGrouping(false, []); refitSoon(); return; }
-    var map = {};
+    // 丸=トピックのみ。アンカー(種別)は既定で非表示にし、枠を持つヘッダーだけ後で復帰させる
+    nodes.forEach(function (n) { n.hiddenByGroup = n.anchor; n.group = null; });
+    if (axis === 'none') { graph.clearGrouping(); refitSoon(); return; }
+
+    var headers = [], byGroup = {};
+    nodes.forEach(function (n) {
+      if (n.anchor && n.type === axis) { headers.push(n); byGroup[n.id] = []; }
+    });
+    var other = [];
     nodes.forEach(function (n) {
       if (n.anchor) return;
       var refs = n.anchorRefs || [], g = null;
       for (var i = 0; i < refs.length; i++) { var t = byId[refs[i]]; if (t && t.type === axis) { g = refs[i]; break; } }
-      n.group = g;
-      if (g) (map[g] || (map[g] = [])).push(n);
+      if (g && byGroup[g]) { n.group = g; byGroup[g].push(n); }
+      else { n.group = '__other__'; other.push(n); }
     });
-    var ids = Object.keys(map);
-    ids.sort(function (a, b) { return map[b].length - map[a].length; });
-    var cnt = ids.length || 1;
-    var R = Math.max(360, cnt * 66);
-    var centers = [];
-    ids.forEach(function (id, i) {
-      var ang = (i / cnt) * Math.PI * 2 - Math.PI / 2;
-      var node = byId[id];
-      node.isGroupCenter = true;
-      node.slotX = Math.cos(ang) * R; node.slotY = Math.sin(ang) * R;
-      node.groupHue = Math.round((i / cnt) * 360);
-      node.x = node.slotX; node.y = node.slotY;
-      centers.push(node);
+
+    var groups = [];
+    headers.forEach(function (h) { if (byGroup[h.id].length) groups.push({ id: h.id, header: h, label: h.label, members: byGroup[h.id] }); });
+    if (other.length) groups.push({ id: '__other__', header: null, label: 'その他 / 未分類', members: other });
+    groups.sort(function (a, b) { return b.members.length - a.members.length; });
+
+    groups.forEach(function (g) { packCluster(g.members); });
+    placeClusters(groups);
+
+    var frames = [];
+    groups.forEach(function (g, gi) {
+      var hue = Math.round((gi * 137.508) % 360);
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      g.members.forEach(function (m) {
+        m.x = g.cx + m._lx; m.y = g.cy + m._ly;
+        if (m.x - m.r < x0) x0 = m.x - m.r; if (m.y - m.r < y0) y0 = m.y - m.r;
+        if (m.x + m.r > x1) x1 = m.x + m.r; if (m.y + m.r > y1) y1 = m.y + m.r;
+      });
+      var PAD = 16, TOP = 26; // 上辺にラベル用の余白
+      var rect = { x0: x0 - PAD, y0: y0 - PAD - TOP, x1: x1 + PAD, y1: y1 + PAD };
+      if (g.header) { g.header.x = (rect.x0 + rect.x1) / 2; g.header.y = rect.y0 + 13; g.header.r = 15; g.header.hiddenByGroup = false; }
+      frames.push({ label: g.label, hue: hue, rect: rect, headerId: g.header ? g.header.id : null, count: g.members.length });
     });
-    // 各トピックを所属グループの中心付近に配置し、クラスタ形成を速く・きれいに
-    nodes.forEach(function (n) {
-      if (n.group && byId[n.group]) { var c = byId[n.group]; n.x = c.slotX + (Math.random() - 0.5) * 90; n.y = c.slotY + (Math.random() - 0.5) * 90; }
-    });
-    graph.setGrouping(true, centers);
-    refitSoon();
+
+    graph.setGrouped(frames);
   }
   var groupSel = document.getElementById('group-axis');
   if (groupSel) groupSel.addEventListener('change', function () { deselect(); assignGroups(groupSel.value); });
-  assignGroups('product'); // 既定は「製品ごと」にグループ化して枠で囲む
+  assignGroups('product'); // 既定は「製品ごと」に枠で整列
 
   /* ============================================================
      THEME

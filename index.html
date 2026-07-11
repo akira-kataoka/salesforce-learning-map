@@ -39,13 +39,13 @@
   <!-- ===== Legend / Filter ===== -->
   <aside id="legend">
     <div class="legend-title">凡例 / フィルタ</div>
-    <div class="legend-sub">グループ化(枠で囲む)</div>
+    <div class="legend-sub">枠で分ける種別(1つ選択)</div>
     <select id="group-axis" class="group-select">
       <option value="product">製品ごと</option>
       <option value="cert">認定資格ごと</option>
       <option value="concept">概念ごと</option>
       <option value="role">職種ごと</option>
-      <option value="none">グループ化しない</option>
+      <option value="none">枠なし(力学グラフ)</option>
     </select>
     <div class="legend-sub">種別</div>
     <div id="legend-types"></div>
@@ -55,18 +55,17 @@
       <button class="lvl-chip" data-level="intermediate"><i class="lvl-dot i"></i>中級</button>
       <button class="lvl-chip" data-level="advanced"><i class="lvl-dot a"></i>上級</button>
     </div>
-    <div class="legend-sub">リンク(関係)</div>
-    <div id="legend-links" class="link-legend">
-      <div class="ll-row"><span class="ll-line contains"></span>包含:グループがトピックを束ねる</div>
-      <div class="ll-row"><span class="ll-line prereq"></span>前提:学習の順序 →</div>
-      <div class="ll-row"><span class="ll-line rel"></span>グループ同士の関係</div>
-    </div>
-    <div class="legend-sub">円の大きさ = 学習の重大性</div>
+    <div class="legend-sub">丸の大きさ = 学習の重大性</div>
     <div class="link-legend">
       <div class="ll-row"><span class="ll-size s"></span>小 = 個別・限定的な機能</div>
       <div class="ll-row"><span class="ll-size l"></span>大 = 機能量が多い/多くの土台になる重要トピック</div>
     </div>
-    <div class="legend-hint">クリック=詳細 / ドラッグ=移動<br>ホイール=ズーム / 背景ドラッグ=パン</div>
+    <div class="legend-sub">見かた</div>
+    <div class="link-legend">
+      <div class="ll-row"><span class="ll-line contains"></span>枠 = 種別グループ(中のトピックを内包)</div>
+      <div class="ll-row"><span class="ll-line prereq"></span>クリックで前提・関連リンクを表示 →</div>
+    </div>
+    <div class="legend-hint">丸=トピックのみ / 種別は枠<br>ズームすると小さなトピックが順に出現<br>クリック=詳細 / 背景ドラッグ=パン</div>
   </aside>
 
   <!-- ===== Canvas ===== -->

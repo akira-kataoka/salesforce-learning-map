@@ -38,6 +38,8 @@
     this.visiblePredicate = null;  // fn(node)->bool
     this.groupMode = false;        // グループ化(包含クラスタ)表示
     this.groupCenters = [];        // グループ中心ノードの配列
+    this.staticMode = false;       // 種別で枠に整列した静的レイアウト
+    this.groupFrames = [];         // 描画する枠 {label,hue,rect,headerId,count}
 
     // physics
     this.alpha = 1;
@@ -70,7 +72,8 @@
     this.canvas.width = r.width * this.dpr;
     this.canvas.height = r.height * this.dpr;
     if (!this._centered) { this.tx = this.W / 2; this.ty = this.H / 2; this._centered = true; }
-    this.reheat(0.3);
+    if (this.staticMode) { if (!this._userInteracted) this.fit(80); }
+    else this.reheat(0.3);
   };
 
   ForceGraph.prototype.reheat = function (a) {
@@ -189,9 +192,39 @@
 
   /* ---------- rendering ---------- */
   ForceGraph.prototype._loop = function () {
-    if (this.running || this.dragNode) this._physics();
+    if (!this.staticMode && (this.running || this.dragNode)) this._physics();
     this._draw();
     requestAnimationFrame(this._loop);
+  };
+
+  // 種別グループの「枠(角丸ボックス)」を描画。丸はトピックのみ、種別は枠で表現する。
+  ForceGraph.prototype._drawFrames = function (s) {
+    var ctx = this.ctx;
+    for (var g = 0; g < this.groupFrames.length; g++) {
+      var f = this.groupFrames[g], r = f.rect;
+      var w = r.x1 - r.x0, h = r.y1 - r.y0;
+      var rad = Math.min(26, w * 0.14, h * 0.14);
+      ctx.lineWidth = 1.3 / s;
+      ctx.strokeStyle = 'hsla(' + f.hue + ',72%,64%,0.36)';
+      ctx.fillStyle = 'hsla(' + f.hue + ',70%,58%,0.055)';
+      roundRect(ctx, r.x0, r.y0, w, h, rad);
+      ctx.fill(); ctx.stroke();
+      // ヘッダーラベル(種別名 + トピック数) を上辺中央に
+      var fs = 12.5 / s;
+      ctx.font = '700 ' + fs + 'px ' + FONT;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      var label = f.label + '  (' + f.count + ')';
+      var tw = ctx.measureText(label).width;
+      var dot = 7 / s, gap = 6 / s, total = dot + gap + tw;
+      var lx = (r.x0 + r.x1) / 2 - total / 2, ly = r.y0 + 13 / s;
+      ctx.fillStyle = 'hsl(' + f.hue + ',75%,63%)';
+      ctx.beginPath(); ctx.arc(lx + dot / 2, ly, dot / 2, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 3 / s; ctx.strokeStyle = HALO; ctx.lineJoin = 'round';
+      ctx.strokeText(label, lx + dot + gap, ly);
+      ctx.fillStyle = LABEL;
+      ctx.fillText(label, lx + dot + gap, ly);
+    }
+    ctx.textBaseline = 'alphabetic';
   };
 
   ForceGraph.prototype._drawHulls = function (s) {
@@ -235,6 +268,7 @@
   };
 
   ForceGraph.prototype._isVisible = function (n) {
+    if (n.hiddenByGroup) return false;
     return this.visiblePredicate ? this.visiblePredicate(n) : true;
   };
 
@@ -249,14 +283,17 @@
     var hl = this.highlight;
     var hasHL = !!hl;
 
-    if (this.groupMode) this._drawHulls(s);
+    if (this.staticMode) this._drawFrames(s);
+    else if (this.groupMode) this._drawHulls(s);
 
     // ---- links (種別で描き分け: 包含=グループ色の実線 / 前提=矢印付き破線 / 関連=淡色) ----
     for (var i = 0; i < this.links.length; i++) {
       var l = this.links[i], a = l._s, b = l._t;
       if (!a || !b) continue;
       if (!this._isVisible(a) || !this._isVisible(b)) continue;
-      if (this.groupMode && GROUP_KINDS[l.kind] && b.group !== a.id) continue; // 副グループ線は描かない
+      // 静的な枠レイアウトでは既定は線を描かず、選択/ホバー時のみ関連リンクを光らせる(星空を見やすく保つ)
+      if (this.staticMode && !(hasHL && hl.has(a.id) && hl.has(b.id))) continue;
+      if (this.groupMode && !this.staticMode && GROUP_KINDS[l.kind] && b.group !== a.id) continue; // 副グループ線は描かない
       var st = KIND[l.kind] || KIND.anchor;
       var lit = hasHL && hl.has(a.id) && hl.has(b.id);
       var col, al, w;
@@ -282,6 +319,10 @@
       var gn = this.nodes[gk];
       if (!this._isVisible(gn)) continue;
       if (hasHL && !hl.has(gn.id)) continue;
+      if (this.staticMode) {
+        if (gn.anchor) continue;                                   // 種別は枠で表現するので発光させない
+        if (gn.r * s < 2.4 && !(hasHL && hl.has(gn.id))) continue; // ズームで小トピックが順に現れる
+      }
       var grr = Math.max(gn.r, 1.4 / s) * 2.0 + 1.4 / s;
       ctx.globalAlpha = gn.anchor ? 0.13 : 0.085;
       ctx.fillStyle = gn.color;
@@ -297,6 +338,11 @@
       var dim = hasHL && !hl.has(n.id);
       var isHover = n === this.hoverNode;
       var isSel = n.id === this.selectedId;
+      var forced = isHover || isSel || (hasHL && hl.has(n.id));
+      if (this.staticMode) {
+        if (n.anchor) continue;                             // 種別は枠なので丸は描かない
+        if (n.r * s < 2.4 && !forced) continue;             // 星空セマンティックズーム: 小トピックはズームで出現
+      }
       var r = Math.max(n.r, 1.4 / s); // ズームアウト時も星として見えるよう最小サイズを確保
 
       ctx.globalAlpha = dim ? 0.22 : 1;
@@ -327,14 +373,17 @@
 
       // labels — 星空セマンティックズーム: ズームするほど細かいトピックが順に見える
       var showLabel = false;
-      if (n.anchor) {
+      if (this.staticMode) {
+        // 重大性(円の大きさ)が大きいトピックから順にラベルを出す
+        if (n.r * s >= 11) showLabel = true;
+      } else if (n.anchor) {
         if (s > (n.type === 'cert' ? 0.85 : 0.42)) showLabel = true;
       } else {
         // 重要度(degree)が高いトピックから段階的にラベルを出す
         var tth = n.deg >= 7 ? 0.85 : (n.deg >= 4 ? 1.25 : (n.deg >= 2 ? 1.75 : 2.3));
         if (s > tth) showLabel = true;
       }
-      if (isHover || isSel || (hasHL && hl.has(n.id))) showLabel = true;
+      if (forced) showLabel = true;
       if (dim && s <= 1.4) showLabel = false;
 
       if (showLabel) {
@@ -470,6 +519,20 @@
     this.groupMode = !!on; this.groupCenters = centers || [];
     this._userInteracted = false; this._didAutoFit = false; this.reheat(1);
   };
+  // 種別で枠に整列した静的レイアウトを適用(位置は呼び出し側で node.x/y に設定済み)
+  ForceGraph.prototype.setGrouped = function (frames) {
+    this.staticMode = true; this.groupMode = true;
+    this.groupFrames = frames || [];
+    this.running = false; this.alpha = 0;
+    this._userInteracted = false; this._didAutoFit = false;
+    this.fit(80);
+  };
+  ForceGraph.prototype.clearGrouping = function () {
+    this.staticMode = false; this.groupMode = false; this.groupFrames = [];
+    this.nodes.forEach(function (n) { n.hiddenByGroup = false; });
+    this._userInteracted = false; this._didAutoFit = false;
+    this.reheat(1);
+  };
 
   ForceGraph.prototype.fit = function (pad) {
     pad = pad || 70;
@@ -523,6 +586,16 @@
     for (i = 0; i < pts.length; i++) { p = pts[i]; while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
     for (i = pts.length - 1; i >= 0; i--) { p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
     lo.pop(); up.pop(); return lo.concat(up);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   function drawArrow(ctx, a, b, col, al, s) {
