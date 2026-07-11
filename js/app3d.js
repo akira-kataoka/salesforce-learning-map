@@ -103,9 +103,12 @@
   var GRAY = new THREE.Color(0x2b3448), AMBER = new THREE.Color(0xd0a24a);
   var lpos = new Float32Array(links.length * 6);
   var lcol = new Float32Array(links.length * 6);
+  // 製品/資格/概念/職種→トピックはグループ色で描く(包含)。前提=アンバー、アンカー間=グレー
   function baseLinkColor(l) {
-    if (l.kind === 'contains') return l.source.col.clone().multiplyScalar(0.55);
-    if (l.kind === 'covers') return l.source.col.clone().multiplyScalar(0.42);
+    if (l.kind === 'contains') return l.source.col.clone().multiplyScalar(0.5);
+    if (l.kind === 'covers') return l.source.col.clone().multiplyScalar(0.4);
+    if (l.kind === 'category') return l.source.col.clone().multiplyScalar(0.34);
+    if (l.kind === 'role') return l.source.col.clone().multiplyScalar(0.3);
     if (l.kind === 'prereq') return AMBER.clone().multiplyScalar(0.5);
     return GRAY.clone().multiplyScalar(0.6);
   }
@@ -122,7 +125,7 @@
       var l = links[i], c;
       if (hl) {
         if (hl[l.source.id] && hl[l.target.id]) {
-          c = (l.kind === 'prereq') ? AMBER : (l.kind === 'contains' || l.kind === 'covers') ? l.source.col : GRAY.clone().multiplyScalar(1.6);
+          c = (l.kind === 'prereq') ? AMBER : (l.kind === 'anchor') ? GRAY.clone().multiplyScalar(1.6) : l.source.col;
         } else { c = BLACK; }
       } else { c = l.baseCol; }
       lcol[i * 6] = c.r; lcol[i * 6 + 1] = c.g; lcol[i * 6 + 2] = c.b;

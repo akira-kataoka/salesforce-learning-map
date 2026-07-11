@@ -417,11 +417,12 @@
   };
 
   // link kind → visual style. col:null = use source(group) node color
+  // 製品/資格/概念/職種→トピックは、いずれもグループ色で描く「包含」リンク
   var KIND = {
     contains: { a: 0.19, w: 1.5, dash: false, col: null, arrow: false },
-    covers:   { a: 0.11, w: 1.0, dash: false, col: null, arrow: false },
-    category: { a: 0.05, w: 0.8, dash: false, col: '#8089a0', arrow: false },
-    role:     { a: 0.05, w: 0.8, dash: false, col: '#8089a0', arrow: false },
+    covers:   { a: 0.13, w: 1.1, dash: false, col: null, arrow: false },
+    category: { a: 0.11, w: 1.0, dash: false, col: null, arrow: false },
+    role:     { a: 0.10, w: 1.0, dash: false, col: null, arrow: false },
     prereq:   { a: 0.15, w: 1.3, dash: true,  col: '#c9954a', arrow: true },
     anchor:   { a: 0.16, w: 1.2, dash: false, col: null, arrow: false }
   };

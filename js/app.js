@@ -62,11 +62,12 @@
     (a.links || []).forEach(function (l) { addLink(a.id, l.to, 'anchor', 120, 0.10, l.rel); });
   });
   // topic <- anchor（包含・グルーピング）と topic → topic（前提）
+  // 製品・資格・概念・職種はすべて「トピックを束ねるグループ(包含)」として扱う
   var TOPIC_EDGE = {
-    product: { kind: 'contains', len: 92, strength: 0.17 },
-    cert:    { kind: 'covers',   len: 122, strength: 0.11 },
-    concept: { kind: 'category', len: 155, strength: 0.05 },
-    role:    { kind: 'role',     len: 155, strength: 0.05 }
+    product: { kind: 'contains', len: 92, strength: 0.16 },
+    cert:    { kind: 'covers',   len: 116, strength: 0.12 },
+    concept: { kind: 'category', len: 128, strength: 0.11 },
+    role:    { kind: 'role',     len: 138, strength: 0.09 }
   };
   topics.forEach(function (t) {
     (t.anchors || []).forEach(function (aid) {
@@ -188,12 +189,12 @@
   var ANCHOR_TITLE = { role: '関連する職種', cert: '関連する認定資格', product: '関連する製品', concept: '関連する概念', topic: '関連するトピック' };
   var REL_ORDER = ['inprod', 'incert', 'pin', 'pout', 'ctopics', 'covtopics', 'cattopics', 'roletopics', 't_role', 't_cert', 't_product', 't_concept', 'incat', 'inrole'];
   var REL_TITLE = {
-    inprod: '含まれる製品グループ', incert: 'この項目をカバーする資格',
+    inprod: '所属する製品グループ', incert: '所属する資格グループ',
+    incat: '所属する概念グループ', inrole: '所属する職種グループ',
     pin: '前提となる項目', pout: 'この後に学べる項目',
-    ctopics: '含まれる機能・トピック', covtopics: 'この資格がカバーするトピック',
-    cattopics: 'このカテゴリの学習トピック', roletopics: '関連する学習トピック',
-    t_role: '対象の職種', t_cert: '推奨・関連する資格', t_product: '関連する製品', t_concept: '関連する概念',
-    incat: 'カテゴリ(概念)', inrole: '関連する職種'
+    ctopics: '含まれる機能・トピック', covtopics: 'この資格に含まれるトピック',
+    cattopics: 'この概念グループに含まれるトピック', roletopics: 'この職種グループに含まれるトピック',
+    t_role: '対象の職種', t_cert: '推奨・関連する資格', t_product: '関連する製品', t_concept: '関連する概念'
   };
   function relKey(node, e) {
     var o = e.other, k = e.kind;
