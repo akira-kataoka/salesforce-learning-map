@@ -39,11 +39,11 @@
       var base = { concept: 5.4, product: 5.2, role: 5.0, cert: 3.5 }[n.type] || 5;
       n.r = base + Math.min(3.4, Math.sqrt(n.deg) * 0.75);
     } else {
-      // トピックは重大性(機能量・優先度)を順位で均等に散らして表現: 1.9〜7.4
-      n.r = 1.9 + n.weight * 5.5;
+      // トピックは重大度(sig)を順位で均等化した weight でサイズを大きく変える: 1.5〜9.0
+      n.r = 1.5 + n.weight * 7.5;
     }
     // 反発の質量: ハブ(種別)ほど強く反発させ、中央に固まらず神経節のように広がる
-    n.chg = n.anchor ? 2.4 : 1.0;
+    n.chg = n.anchor ? 3.1 : 1.0;
     n.col = new THREE.Color(n.color);
     // 表示色 = 種別色に「深さの色」を少し混ぜる(種別=色相 / 深さ=色味の変化)
     n.dispCol = n.anchor ? n.col.clone() : n.col.clone().lerp(depthColorFor(n.depthNorm || 0), 0.28 * (n.depthNorm || 0) + 0.06);
@@ -65,10 +65,10 @@
   labelRenderer.domElement.style.top = '0';
 
   var scene = new THREE.Scene();
-  var DARK = { bg: 0x080a12, fog: 0.0012, bloom: 0.32, thr: 0.6 };
+  var DARK = { bg: 0x080a12, fog: 0.0013, bloom: 0.26, thr: 0.68 };
 
   var camera = new THREE.PerspectiveCamera(58, W / H, 1, 6000);
-  var DIST0 = 560;
+  var DIST0 = 580;
   camera.position.set(0, 0, DIST0);
 
   var controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -132,7 +132,7 @@
   var group = new THREE.Group(); scene.add(group);
   nodes.forEach(function (n) {
     var mat = new THREE.MeshStandardMaterial({
-      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.42 : 0.26,
+      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.4 : 0.2,
       metalness: 0.3, roughness: 0.4, transparent: true, opacity: 0.96
     });
     var mesh = new THREE.Mesh(sphereGeo, mat);
@@ -142,7 +142,7 @@
     n.mesh = mesh; n.mat = mat; n.baseEmissive = mat.emissiveIntensity;
     group.add(mesh);
     // やわらかいグロー(星のにじみ) — 加算スプライトをノードの子として付ける
-    var glowMat = new THREE.SpriteMaterial({ map: GLOW_TEX, color: n.dispCol, transparent: true, opacity: n.anchor ? 0.24 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
+    var glowMat = new THREE.SpriteMaterial({ map: GLOW_TEX, color: n.dispCol, transparent: true, opacity: n.anchor ? 0.26 : 0.075, blending: THREE.AdditiveBlending, depthWrite: false });
     var glow = new THREE.Sprite(glowMat);
     glow.scale.setScalar(n.anchor ? 3.4 : 2.6);
     mesh.add(glow);
@@ -179,12 +179,18 @@
     return GRAY.clone().multiplyScalar(0.6);
   }
   links.forEach(function (l) { l.baseCol = baseLinkColor(l); });
-  // ハブ同士(種別間)のリンクは長く弱く — 種別が中央に固まらず放射状に広がるように
-  links.forEach(function (l) { if (l.kind === 'anchor') { l.len = 260; l.strength = 0.045; } });
+  // 関連が強いほど近く、弱い/無関係ほど遠く。前提・包含は短く強く引き寄せ、ハブ同士は遠ざける
+  links.forEach(function (l) {
+    if (l.kind === 'anchor') { l.len = 340; l.strength = 0.03; }          // 種別ハブ同士は遠く弱く
+    else if (l.kind === 'prereq') { l.len = 58; l.strength = 0.24; }      // 前提の連なりは最も近く
+    else if (l.kind === 'contains') { l.len = 74; l.strength = 0.15; }    // 製品⊃トピックは近く
+    else if (l.kind === 'covers') { l.len = 86; l.strength = 0.12; }
+    else { l.len = 98; l.strength = 0.10; }                                // 概念/職種は少し緩く
+  });
   var lgeo = new THREE.BufferGeometry();
   lgeo.setAttribute('position', new THREE.BufferAttribute(lpos, 3));
   lgeo.setAttribute('color', new THREE.BufferAttribute(lcol, 3));
-  var lmat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+  var lmat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
   var lineSeg = new THREE.LineSegments(lgeo, lmat);
   scene.add(lineSeg);
 
@@ -256,7 +262,7 @@
     var VMAX = 14;
     for (i = 0; i < N; i++) {
       a = nodes[i];
-      a.vx += (-a.x) * alpha * 0.0032; a.vy += (-a.y) * alpha * 0.0032; a.vz += (-a.z) * alpha * 0.0032;
+      a.vx += (-a.x) * alpha * 0.0022; a.vy += (-a.y) * alpha * 0.0022; a.vz += (-a.z) * alpha * 0.0022;
       a.vx *= 0.6; a.vy *= 0.6; a.vz *= 0.6;
       if (a.vx > VMAX) a.vx = VMAX; else if (a.vx < -VMAX) a.vx = -VMAX;
       if (a.vy > VMAX) a.vy = VMAX; else if (a.vy < -VMAX) a.vy = -VMAX;
@@ -322,13 +328,30 @@
       }
     });
     recolorBase();
-    if (!selectedId) writeLinkColors(null);
+    if (!selectedId) { writeLinkColors(null); curHL = null; }
     updateHUD(count);
   }
 
+  // ラベルの間引き: カメラから遠い/選択外のラベルをフェードして中央の重なりを解消
+  function updateLabels() {
+    var cp = camera.position;
+    for (var i = 0; i < N; i++) {
+      var n = nodes[i]; if (!n.labelEl) continue;
+      if (!n.mesh.visible) { n.labelEl.style.opacity = '0'; continue; }
+      var dx = n.x - cp.x, dy = n.y - cp.y, dz = n.z - cp.z;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      var f = d < 340 ? 1 : (d > 760 ? 0 : 1 - (d - 340) / 420);   // 近い=はっきり / 遠い=消える
+      if (curHL) f *= curHL[n.id] ? 1 : 0.04;
+      else if (n.type === 'cert') f = 0;                            // 資格ラベルは選択時のみ
+      if (n.id === selectedId || n === hoverNode) f = 1;
+      n.labelEl.style.opacity = f.toFixed(2);
+    }
+  }
+
   /* ---------- highlight / selection ---------- */
-  var selectedId = null, activePath = null;
+  var selectedId = null, activePath = null, curHL = null;
   function setHighlight(hl, roleMap) {
+    curHL = hl;
     nodes.forEach(function (n) {
       var dim = hl && !hl[n.id];
       n.mat.opacity = dim ? 0.12 : 0.96;
@@ -611,6 +634,7 @@
       if (focusAnim.t >= 1) focusAnim = null;
     }
     controls.update();
+    updateLabels();
     composer.render();
     labelRenderer.render(scene, camera);
   }

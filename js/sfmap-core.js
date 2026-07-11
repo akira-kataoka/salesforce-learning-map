@@ -217,12 +217,15 @@ window.SFMAPCore = (function () {
   function refsFor(n) {
     var term = n.label.replace(/[（(].*?[)）]/g, '').replace(/\s*\/\s*/g, ' ').trim() || n.label;
     var q = encodeURIComponent(term);
-    var refs = [
-      { site: 'Trailhead', label: 'Trailheadで学ぶ', url: 'https://trailhead.salesforce.com/ja/search?keywords=' + q },
-      { site: 'ヘルプ', label: '公式ヘルプを検索', url: 'https://help.salesforce.com/s/search-result?language=ja&searchQuery=' + q }
-    ];
-    if (DEV_CATS[n.category]) refs.push({ site: '開発者', label: '開発者ドキュメント', url: 'https://developer.salesforce.com/search?q=' + q });
-    if (n.type === 'cert') refs.push({ site: '資格', label: '認定資格カタログ', url: 'https://trailhead.salesforce.com/ja/credentials/' });
+    var refs = [];
+    // 種別ごとの入口を先頭に
+    if (n.type === 'cert') refs.push({ site: '認定資格', label: '資格ガイド・試験範囲', url: 'https://trailhead.salesforce.com/ja/credentials/' });
+    if (n.type === 'product') refs.push({ site: '製品', label: '製品を調べる', url: 'https://help.salesforce.com/s/search-result?language=ja&searchQuery=' + q });
+    refs.push({ site: 'Trailhead', label: 'Trailheadで学ぶ', url: 'https://trailhead.salesforce.com/ja/search?keywords=' + q });
+    refs.push({ site: 'ヘルプ', label: '公式ヘルプを検索', url: 'https://help.salesforce.com/s/search-result?language=ja&searchQuery=' + q });
+    refs.push({ site: 'コミュニティ', label: 'Trailblazerで探す', url: 'https://trailhead.salesforce.com/ja/trailblazer-community/search?query=' + q });
+    if (DEV_CATS[n.category] || (n.type === 'product' && /platform|mulesoft|einstein|agentforce|data-cloud/.test(n.id)))
+      refs.push({ site: '開発者', label: '開発者ドキュメント', url: 'https://developer.salesforce.com/search?q=' + q });
     return refs;
   }
   function buildRefs(n) {
