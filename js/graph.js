@@ -190,28 +190,28 @@
     var hl = this.highlight;
     var hasHL = !!hl;
 
-    // ---- links ----
-    ctx.lineWidth = 1 / s;
+    // ---- links (種別で描き分け: 包含=グループ色の実線 / 前提=矢印付き破線 / 関連=淡色) ----
     for (var i = 0; i < this.links.length; i++) {
       var l = this.links[i], a = l._s, b = l._t;
       if (!a || !b) continue;
       if (!this._isVisible(a) || !this._isVisible(b)) continue;
-      var lit = hasHL && (hl.has(a.id) && hl.has(b.id));
-      if (hasHL && !lit) {
-        ctx.globalAlpha = 0.04;
-        ctx.strokeStyle = '#8a93a5';
-      } else if (lit) {
-        ctx.globalAlpha = 0.55;
-        ctx.strokeStyle = b.color;
-      } else {
-        ctx.globalAlpha = 0.14;
-        ctx.strokeStyle = '#7f8aa0';
-      }
+      var st = KIND[l.kind] || KIND.anchor;
+      var lit = hasHL && hl.has(a.id) && hl.has(b.id);
+      var col, al, w;
+      if (hasHL && !lit) { col = '#8a93a5'; al = 0.03; w = st.w; }
+      else if (lit) { col = (l.kind === 'prereq') ? '#f6b545' : a.color; al = (st.a < 0.12 ? 0.42 : 0.55); w = st.w + 0.4; }
+      else { col = st.col || a.color; al = st.a; w = st.w; }
+      ctx.globalAlpha = al;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = w / s;
+      if (st.dash) ctx.setLineDash([5 / s, 4 / s]); else ctx.setLineDash(EMPTY_DASH);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
+      if (st.arrow && s > 0.5 && (!hasHL || lit)) drawArrow(ctx, a, b, col, Math.min(0.7, al * 1.6), s);
     }
+    ctx.setLineDash(EMPTY_DASH);
     ctx.globalAlpha = 1;
 
     // ---- nodes ----
@@ -415,6 +415,33 @@
     this.tx = this.W / 2 - n.x * s;
     this.ty = this.H / 2 - n.y * s;
   };
+
+  // link kind → visual style. col:null = use source(group) node color
+  var KIND = {
+    contains: { a: 0.19, w: 1.5, dash: false, col: null, arrow: false },
+    covers:   { a: 0.11, w: 1.0, dash: false, col: null, arrow: false },
+    category: { a: 0.05, w: 0.8, dash: false, col: '#8089a0', arrow: false },
+    role:     { a: 0.05, w: 0.8, dash: false, col: '#8089a0', arrow: false },
+    prereq:   { a: 0.15, w: 1.3, dash: true,  col: '#c9954a', arrow: true },
+    anchor:   { a: 0.16, w: 1.2, dash: false, col: null, arrow: false }
+  };
+  var EMPTY_DASH = [];
+
+  function drawArrow(ctx, a, b, col, al, s) {
+    var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+    var ux = dx / d, uy = dy / d;
+    var tipX = b.x - ux * (b.r + 2.5 / s), tipY = b.y - uy * (b.r + 2.5 / s);
+    var size = 6 / s, ang = Math.atan2(uy, ux);
+    ctx.setLineDash(EMPTY_DASH);
+    ctx.globalAlpha = al;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - size * Math.cos(ang - 0.42), tipY - size * Math.sin(ang - 0.42));
+    ctx.lineTo(tipX - size * Math.cos(ang + 0.42), tipY - size * Math.sin(ang + 0.42));
+    ctx.closePath();
+    ctx.fill();
+  }
 
   var FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif';
   var LABEL = 'rgba(231,236,243,0.92)';

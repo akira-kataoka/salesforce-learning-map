@@ -223,6 +223,31 @@ body{
 .rel-chip .rc-dot{width:8px;height:8px;border-radius:50%;flex:none}
 .rel-chip .rc-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* 参考ページ(外部リンク) */
+.p-refs{margin-top:24px}
+.ref-chips{display:flex;flex-direction:column;gap:7px}
+.ref-chip{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+  text-decoration:none;font-size:12.5px;transition:.13s;
+}
+.ref-chip:hover{border-color:var(--accent);transform:translateY(-1px)}
+.ref-chip .ref-site{
+  font-size:10px;font-weight:800;letter-spacing:.3px;padding:3px 8px;border-radius:6px;flex:none;
+  background:rgba(45,212,191,0.16);color:var(--accent);
+}
+.ref-chip .rc-label{flex:1;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ref-chip .ref-ext{color:var(--text-faint);font-size:13px;flex:none}
+
+/* リンク種別の凡例 */
+.link-legend{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.ll-row{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--text-dim)}
+.ll-line{width:24px;height:0;flex:none;position:relative}
+.ll-line.contains{border-top:2px solid var(--c-product)}
+.ll-line.covers{border-top:1.5px solid var(--c-cert)}
+.ll-line.prereq{border-top:2px dashed #c9954a}
+.ll-line.rel{border-top:1.5px solid var(--text-faint);opacity:.6}
+
 /* ===== Help Modal ===== */
 .modal{position:absolute;inset:0;z-index:60;display:grid;place-items:center;
   background:rgba(6,8,12,0.62);backdrop-filter:blur(4px);padding:20px}

@@ -42,6 +42,12 @@
       <button class="lvl-chip" data-level="intermediate"><i class="lvl-dot i"></i>中級</button>
       <button class="lvl-chip" data-level="advanced"><i class="lvl-dot a"></i>上級</button>
     </div>
+    <div class="legend-sub">リンク(関係)</div>
+    <div id="legend-links" class="link-legend">
+      <div class="ll-row"><span class="ll-line contains"></span>包含:製品・資格が含む</div>
+      <div class="ll-row"><span class="ll-line prereq"></span>前提:学習の順序 →</div>
+      <div class="ll-row"><span class="ll-line rel"></span>関連・カテゴリ分類</div>
+    </div>
     <div class="legend-hint">クリック=詳細 / ドラッグ=移動<br>ホイール=ズーム / 背景ドラッグ=パン</div>
   </aside>
 
@@ -73,7 +79,8 @@
       <p>Salesforceを<strong>何から学べばいいか</strong>を一目で把握するための、Obsidian風インタラクティブ知識グラフです。</p>
       <ul>
         <li><b>ノードの色</b>は種別を表します:製品 / 職種 / 認定資格 / 概念 / トピック(具体的な学習項目)。</li>
-        <li><b>線(リンク)</b>は「この資格はこの職種向け」「このトピックはこの製品で使う」「これを学ぶ前提はこれ」といった関係です。</li>
+        <li><b>線(リンク)</b>には種類があります:<b>包含</b>(製品・資格が機能/トピックを含む=グループ)を表す色付きの実線、<b>前提</b>(学習の順序)を表す<b>矢印付きの破線</b>、<b>関連・分類</b>を表す淡い線。製品や資格は<b>グループ</b>、トピックは<b>最小単位</b>として構成しています。</li>
+        <li>各ノードの詳細パネルには <b>📚 参考ページ</b>(Trailhead・公式ヘルプ・開発者ドキュメント等)へのリンクを用意しています。</li>
         <li><b>ノードをクリック</b>すると、右側に詳細(概要・なぜ学ぶか・学習ステップ・つまずき・リソース)と関連ノードが開きます。</li>
         <li>まず <b>職種(オレンジ)</b> から入り、そこにつながる <b>資格(紫)</b> → <b>トピック(青)</b> をたどると学習ルートが見えます。</li>
         <li>凡例のチップで種別・レベルを絞り込み、上部の検索で項目を探せます。</li>

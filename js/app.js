@@ -43,21 +43,39 @@
   });
 
   /* ---------- build links ---------- */
+  // リンク種別で「包含関係」を表現する:
+  //  contains  : 製品 ⊃ トピック（製品がその機能・トピックを含む）
+  //  covers    : 資格 ⊃ トピック（資格がそのトピックを出題範囲としてカバー/グルーピング）
+  //  category  : 概念 — トピック（カテゴリ分類）
+  //  role      : 職種 — トピック（関連）
+  //  prereq    : トピック → トピック（学習の前提・順序）
+  //  anchor    : 製品/職種/資格/概念どうしの関係（推奨資格・基盤 等）
   var links = [];
-  function addLink(sId, tId, kind, len, strength) {
+  function addLink(sId, tId, kind, len, strength, rel) {
     var s = byId[sId], t = byId[tId];
     if (!s || !t) return;
-    links.push({ _s: s, _t: t, kind: kind, len: len, strength: strength });
+    links.push({ _s: s, _t: t, kind: kind, len: len, strength: strength, rel: rel || null });
     s.deg++; t.deg++;
   }
-  // anchor <-> anchor
+  // anchor <-> anchor（グループ同士の関係）
   anchors.forEach(function (a) {
-    (a.links || []).forEach(function (l) { addLink(a.id, l.to, 'anchor', 120, 0.10); });
+    (a.links || []).forEach(function (l) { addLink(a.id, l.to, 'anchor', 120, 0.10, l.rel); });
   });
-  // topic -> anchor
+  // topic <- anchor（包含・グルーピング）と topic → topic（前提）
+  var TOPIC_EDGE = {
+    product: { kind: 'contains', len: 92, strength: 0.17 },
+    cert:    { kind: 'covers',   len: 122, strength: 0.11 },
+    concept: { kind: 'category', len: 155, strength: 0.05 },
+    role:    { kind: 'role',     len: 155, strength: 0.05 }
+  };
   topics.forEach(function (t) {
-    (t.anchors || []).forEach(function (aid) { addLink(t.id, aid, 'relates', 150, 0.085); });
-    (t.prereq || []).forEach(function (pid) { addLink(pid, t.id, 'prereq', 100, 0.20); });
+    (t.anchors || []).forEach(function (aid) {
+      var target = byId[aid];
+      if (!target) return;
+      var cfg = TOPIC_EDGE[target.type] || TOPIC_EDGE.role;
+      addLink(aid, t.id, cfg.kind, cfg.len, cfg.strength); // 方向: グループ → トピック
+    });
+    (t.prereq || []).forEach(function (pid) { addLink(pid, t.id, 'prereq', 98, 0.20); });
   });
 
   /* ---------- radii by degree ---------- */
@@ -156,6 +174,7 @@
     html += '<div class="p-title">' + esc(n.label) + '</div>';
     if (n.summary) html += '<div class="p-summary">' + esc(n.summary) + '</div>';
     html += '<div class="p-body">' + mdToHtml(n.detail || '') + '</div>';
+    html += buildRefs(n);
     html += buildRelated(n);
     panelContent.innerHTML = html;
     panel.scrollTop = 0;
@@ -165,45 +184,77 @@
     });
   }
 
+  // 関連ノードを「包含関係」を明示したグループに整理して表示
+  var ANCHOR_TITLE = { role: '関連する職種', cert: '関連する認定資格', product: '関連する製品', concept: '関連する概念', topic: '関連するトピック' };
+  var REL_ORDER = ['inprod', 'incert', 'pin', 'pout', 'ctopics', 'covtopics', 'cattopics', 'roletopics', 't_role', 't_cert', 't_product', 't_concept', 'incat', 'inrole'];
+  var REL_TITLE = {
+    inprod: '含まれる製品グループ', incert: 'この項目をカバーする資格',
+    pin: '前提となる項目', pout: 'この後に学べる項目',
+    ctopics: '含まれる機能・トピック', covtopics: 'この資格がカバーするトピック',
+    cattopics: 'このカテゴリの学習トピック', roletopics: '関連する学習トピック',
+    t_role: '対象の職種', t_cert: '推奨・関連する資格', t_product: '関連する製品', t_concept: '関連する概念',
+    incat: 'カテゴリ(概念)', inrole: '関連する職種'
+  };
+  function relKey(node, e) {
+    var o = e.other, k = e.kind;
+    if (k === 'prereq') return e.dir === 'in' ? 'pin' : 'pout';
+    if (k === 'contains') return node.type === 'product' ? 'ctopics' : 'inprod';
+    if (k === 'covers') return node.type === 'cert' ? 'covtopics' : 'incert';
+    if (k === 'category') return node.type === 'concept' ? 'cattopics' : 'incat';
+    if (k === 'role') return node.type === 'role' ? 'roletopics' : 'inrole';
+    return 't_' + o.type; // anchor-anchor
+  }
   function buildRelated(n) {
     var edges = adj[n.id] || [];
-    var groups = {
-      prereq_in: { title: '前提となる項目', items: [] },
-      role: { title: '関連する職種', items: [] },
-      cert: { title: '関連する認定資格', items: [] },
-      product: { title: '関連する製品', items: [] },
-      concept: { title: '関連する概念', items: [] },
-      topic: { title: '関連するトピック', items: [] },
-      prereq_out: { title: 'この後に学べる項目', items: [] }
-    };
-    var seen = {};
+    var groups = {}, seen = {};
     edges.forEach(function (e) {
       var o = e.other;
-      var key = (e.kind === 'prereq' ? (e.dir === 'in' ? 'prereq_in' : 'prereq_out') : o.type) + ':' + o.id;
-      if (seen[key]) return; seen[key] = 1;
-      if (e.kind === 'prereq') {
-        groups[e.dir === 'in' ? 'prereq_in' : 'prereq_out'].items.push(o);
-      } else {
-        (groups[o.type] || groups.topic).items.push(o);
-      }
+      var key = relKey(n, e);
+      var sk = key + ':' + o.id;
+      if (seen[sk]) return; seen[sk] = 1;
+      (groups[key] || (groups[key] = [])).push(o);
     });
-    var order = ['prereq_in', 'role', 'cert', 'product', 'concept', 'topic', 'prereq_out'];
-    var out = '<div class="p-rel">';
-    var any = false;
-    order.forEach(function (g) {
-      var grp = groups[g];
-      if (!grp.items.length) return;
+    var out = '<div class="p-rel">', any = false;
+    REL_ORDER.forEach(function (key) {
+      var items = groups[key];
+      if (!items || !items.length) return;
       any = true;
-      grp.items.sort(function (a, b) { return b.deg - a.deg; });
-      out += '<div class="p-rel-group"><div class="p-rel-title">' + grp.title + ' <span style="opacity:.5">(' + grp.items.length + ')</span></div><div class="rel-chips">';
-      grp.items.forEach(function (o) {
-        var c = TYPE_META[o.type].color;
-        out += '<button class="rel-chip" data-id="' + o.id + '"><span class="rc-dot" style="background:' + c + '"></span><span class="rc-label">' + esc(o.label) + '</span></button>';
+      items.sort(function (a, b) { return b.deg - a.deg; });
+      out += '<div class="p-rel-group"><div class="p-rel-title">' + REL_TITLE[key] +
+        ' <span style="opacity:.5">(' + items.length + ')</span></div><div class="rel-chips">';
+      items.forEach(function (o) {
+        out += '<button class="rel-chip" data-id="' + o.id + '"><span class="rc-dot" style="background:' +
+          TYPE_META[o.type].color + '"></span><span class="rc-label">' + esc(o.label) + '</span></button>';
       });
       out += '</div></div>';
     });
     out += '</div>';
     return any ? out : '';
+  }
+
+  /* ---------- 参考ページ(外部リンク) ---------- */
+  var DEV_CATS = { apex: 1, lwc: 1, aura: 1, integration: 1, devops: 1, testing: 1, programmatic: 1, 'integration-arch': 1, 'security-arch': 1 };
+  function refsFor(n) {
+    var term = n.label.replace(/[（(].*?[)）]/g, '').replace(/\s*\/\s*/g, ' ').trim() || n.label;
+    var q = encodeURIComponent(term);
+    var refs = [
+      { site: 'Trailhead', label: 'Trailheadで学ぶ', url: 'https://trailhead.salesforce.com/ja/search?keywords=' + q },
+      { site: 'ヘルプ', label: '公式ヘルプを検索', url: 'https://help.salesforce.com/s/search-result?language=ja&searchQuery=' + q }
+    ];
+    if (DEV_CATS[n.category]) refs.push({ site: '開発者', label: '開発者ドキュメント', url: 'https://developer.salesforce.com/search?q=' + q });
+    if (n.type === 'cert') refs.push({ site: '資格', label: '認定資格カタログ', url: 'https://trailhead.salesforce.com/ja/credentials/' });
+    return refs;
+  }
+  function buildRefs(n) {
+    var refs = refsFor(n);
+    var out = '<div class="p-rel p-refs"><div class="p-rel-title">📚 参考ページ</div><div class="ref-chips">';
+    refs.forEach(function (r) {
+      out += '<a class="ref-chip" href="' + r.url + '" target="_blank" rel="noopener noreferrer">' +
+        '<span class="ref-site">' + esc(r.site) + '</span><span class="rc-label">' + esc(r.label) + '</span>' +
+        '<span class="ref-ext">↗</span></a>';
+    });
+    out += '</div></div>';
+    return out;
   }
 
   document.getElementById('panel-close').addEventListener('click', deselect);

@@ -702,4 +702,153 @@ SOQL/DML制限 / CPU時間 / ヒープ / 一括化`,
 データローダ / 重複管理 / バックアップ / 品質ダッシュボード`,
     links:[{to:'concept-data-model',rel:'関連'}] },
 
+  { id:'concept-identity', label:'ID & アクセス管理', type:'concept', category:'concept',
+    summary:'SSO・OAuth・接続アプリで認証と外部アクセスを安全に統合。',
+    tags:['identity','oauth','sso'],
+    detail:`## 概要
+シングルサインオン(SAML/OIDC)、OAuth 2.0各フロー、接続アプリ、My Domain、外部認証プロバイダで「誰がどう入るか」を設計する領域。
+## なぜ重要か
+統合・モバイル・外部連携すべての入口。System Architectの中核ドメイン。
+## 学ぶこと
+SSO(SAML/OIDC) / OAuthフロー / 接続アプリ / My Domain / 外部ID`,
+    links:[{to:'concept-security',rel:'関連'},{to:'cert-identity-architect',rel:'専門資格'},{to:'concept-integration',rel:'関連'}] },
+
+  { id:'concept-mobile', label:'モバイル', type:'concept', category:'concept',
+    summary:'Salesforceモバイルアプリと現場向けオフライン体験を設計。',
+    tags:['mobile'],
+    detail:`## 概要
+Salesforceモバイルアプリの設定、モバイル最適化レイアウト、オフライン、Field Serviceモバイルなど、現場・外出先での利用体験を扱う。
+## 学ぶこと
+モバイルアプリ設定 / コンパクトレイアウト / モバイル公開 / オフライン`,
+    links:[{to:'concept-ux',rel:'関連'},{to:'prod-platform',rel:'基盤'}] },
+
+  /* ---- 追加: 業種・特化クラウド (製品グループ) ---- */
+  { id:'prod-financial-services', label:'Financial Services Cloud', type:'product', category:'cloud',
+    summary:'金融機関向け。世帯・金融口座・紹介を管理する業種クラウド。',
+    tags:['industry','finance'],
+    detail:`## 概要
+銀行・保険・資産運用向けの業種クラウド。世帯(Household)・金融口座・関係グループ・紹介(Referral)の専用データモデルを提供する。
+## なぜ学ぶのか
+金融業界の大型導入が多く、業種データモデルとコンプライアンス要件の理解が価値になる。
+## 主要トピック
+- 世帯・関係グループ / 金融口座
+- アクションプラン / 紹介管理
+## おすすめリソース
+Trailhead「Financial Services Cloud」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'role-consultant',rel:'対象職種'}] },
+
+  { id:'prod-health', label:'Health Cloud', type:'product', category:'cloud',
+    summary:'医療・ヘルスケア向け。患者・ケアプラン・臨床データを管理。',
+    tags:['industry','health'],
+    detail:`## 概要
+病院・製薬・保険者向けの業種クラウド。患者(Patient)・ケアプラン・臨床データ(HL7/FHIR連携)を管理する。
+## なぜ学ぶのか
+ヘルスケアDXの需要拡大。患者中心のデータモデルと相互運用性(FHIR)が学べる。
+## 主要トピック
+- 患者カード / ケアプラン
+- 臨床データモデル・FHIR連携
+## おすすめリソース
+Trailhead「Health Cloud」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'role-consultant',rel:'対象職種'}] },
+
+  { id:'prod-manufacturing', label:'Manufacturing Cloud', type:'product', category:'cloud',
+    summary:'製造業向け。販売契約と需要予測で営業とオペを橋渡し。',
+    tags:['industry','manufacturing'],
+    detail:`## 概要
+製造業向けの業種クラウド。販売契約(Sales Agreement)とアカウントベース予測で、受注見込みと実績を一元管理する。
+## なぜ学ぶのか
+製造業の営業計画・需要予測のDX。長期契約ビジネスのモデル化が学べる。
+## 主要トピック
+- 販売契約 / アカウント予測
+- 需要計画との連携
+## おすすめリソース
+Trailhead「Manufacturing Cloud」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'prod-sales-cloud',rel:'拡張'},{to:'role-consultant',rel:'対象職種'}] },
+
+  { id:'prod-scheduler', label:'Salesforce Scheduler', type:'product', category:'cloud',
+    summary:'来店・面談などの予約をルールベースで自動割当する予約基盤。',
+    tags:['scheduling','appointment'],
+    detail:`## 概要
+顧客との面談・来店予約を、スキル・稼働・営業時間に基づいて割り当てる予約管理製品。金融・小売の対面業務で活用。
+## 主要トピック
+- サービスリソース・稼働時間
+- 予約フロー(インバウンド/アウトバウンド)
+## おすすめリソース
+Trailhead「Salesforce Scheduler」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'prod-service-cloud',rel:'連携'}] },
+
+  { id:'prod-loyalty', label:'Loyalty Management', type:'product', category:'cloud',
+    summary:'ポイント・特典・会員ランクのロイヤルティプログラムを構築。',
+    tags:['loyalty','b2c'],
+    detail:`## 概要
+ポイント付与・特典・会員ティアを設計するロイヤルティプログラム管理製品。Data CloudやMarketing Cloudと連携する。
+## 主要トピック
+- プログラム / ティア / 特典
+- ポイント台帳・プロモーション
+## おすすめリソース
+Trailhead「Loyalty Management」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'prod-marketing-cloud',rel:'連携'}] },
+
+  { id:'prod-net-zero', label:'Net Zero Cloud', type:'product', category:'cloud',
+    summary:'カーボン会計・サステナビリティ報告を管理する製品。',
+    tags:['sustainability','esg'],
+    detail:`## 概要
+温室効果ガス排出量の計測・カーボン会計・サステナビリティ報告(ESG)を管理する製品。
+## 主要トピック
+- 排出量計測 / カーボン会計
+- サステナビリティ報告
+## おすすめリソース
+Trailhead「Net Zero Cloud」`,
+    links:[{to:'prod-platform',rel:'基盤'}] },
+
+  { id:'prod-public-sector', label:'Public Sector Solutions', type:'product', category:'cloud',
+    summary:'行政・公共向け。ライセンス許認可・給付・査察を管理。',
+    tags:['industry','public'],
+    detail:`## 概要
+政府・自治体向けの業種クラウド。許認可(License & Permit)・給付(Benefits)・査察・ケース管理をテンプレート化する。
+## 主要トピック
+- 許認可・給付管理 / OmniStudio活用
+- 査察・コンプライアンス
+## おすすめリソース
+Trailhead「Public Sector Solutions」`,
+    links:[{to:'prod-platform',rel:'基盤'},{to:'prod-industries',rel:'関連'},{to:'role-consultant',rel:'対象職種'}] },
+
+  /* ---- 追加: 資格 (グループ) ---- */
+  { id:'cert-identity-architect', label:'Identity & Access Management Architect', type:'cert', category:'cert', level:'advanced',
+    summary:'SSO・OAuth・プロビジョニングの認証設計を問うアーキテクト資格。',
+    tags:['architect','identity'],
+    detail:`## 概要
+SAML/OIDCによるSSO、OAuthフロー、ユーザープロビジョニング、外部IDの設計を問う。System Architectの構成資格。
+## 前提
+統合とセキュリティの基礎知識。`,
+    links:[{to:'cert-system-architect',rel:'統合先'},{to:'concept-identity',rel:'領域'},{to:'role-architect',rel:'対象職種'}] },
+
+  { id:'cert-devlifecycle-architect', label:'Development Lifecycle & Deployment Architect', type:'cert', category:'cert', level:'advanced',
+    summary:'環境戦略・CI/CD・リリース管理の設計を問うアーキテクト資格。',
+    tags:['architect','devops'],
+    detail:`## 概要
+サンドボックス戦略、ソース管理、テスト戦略、CI/CDパイプライン、リリース管理の設計を問う。System Architectの構成資格。`,
+    links:[{to:'cert-system-architect',rel:'統合先'},{to:'concept-devops',rel:'領域'},{to:'role-architect',rel:'対象職種'}] },
+
+  { id:'cert-marketing-developer', label:'Marketing Cloud Developer', type:'cert', category:'cert', level:'advanced',
+    summary:'AMPscript/SSJS/APIでMarketing Cloudを拡張する開発資格。',
+    tags:['marketing','developer'],
+    detail:`## 概要
+AMPscript、Server-Side JavaScript、Marketing Cloud API、CloudPagesによる開発を問う。`,
+    links:[{to:'prod-marketing-cloud',rel:'領域'},{to:'role-developer',rel:'対象職種'}] },
+
+  { id:'cert-ux-designer', label:'User Experience Designer', type:'cert', category:'cert', level:'intermediate',
+    summary:'UX原則とSLDS・Lightning設計を問うデザイナー資格。',
+    tags:['designer','ux'],
+    detail:`## 概要
+ユーザー中心設計、アクセシビリティ、SLDS、Lightningページ設計、リサーチ手法を問う。`,
+    links:[{to:'role-designer',rel:'対象職種'},{to:'concept-ux',rel:'領域'}] },
+
+  { id:'cert-strategy-designer', label:'Strategy Designer', type:'cert', category:'cert', level:'advanced',
+    summary:'デザイン思考でビジネス課題を解く上級デザイナー資格。',
+    tags:['designer','strategy'],
+    detail:`## 概要
+デザイン思考、ステークホルダーとの共創、ビジョン設計、価値提案を問う。`,
+    links:[{to:'role-designer',rel:'対象職種'},{to:'concept-ux',rel:'領域'}] },
+
 ];
