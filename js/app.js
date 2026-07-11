@@ -526,7 +526,14 @@
   }
   var groupSel = document.getElementById('group-axis');
   if (groupSel) groupSel.addEventListener('change', function () { deselect(); assignGroups(groupSel.value); });
-  assignGroups('product'); // 既定は「製品ごと」に枠で整列
+  // 既定は「製品ごと」。?axis=cert|concept|role|none で共有可能
+  var initAxis = 'product';
+  try {
+    var qa = (new URLSearchParams(location.search)).get('axis');
+    if (qa && /^(product|cert|concept|role|none)$/.test(qa)) initAxis = qa;
+  } catch (e) {}
+  if (groupSel) groupSel.value = initAxis;
+  assignGroups(initAxis);
 
   /* ============================================================
      THEME
