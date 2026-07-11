@@ -7,11 +7,19 @@ window.SFMAPCore = (function () {
 
   var TYPE_META = {
     product: { color: '#2dd4bf', label: '製品' },
-    role:    { color: '#fbbf24', label: '職種' },
+    role:    { color: '#f6ad37', label: '職種' },
     cert:    { color: '#c084fc', label: '認定資格' },
     concept: { color: '#f472b6', label: '概念' },
     topic:   { color: '#60a5fa', label: 'トピック' }
   };
+  // 学習の深さ(前提チェーンの深さ)を表す5段階
+  var DEPTH_TIERS = [
+    { name: '起点', desc: '最初の一歩。前提知識はいらない。' },
+    { name: '基礎', desc: 'すべての土台になる、要の知識。' },
+    { name: '実践', desc: '手を動かして身につける段階。' },
+    { name: '深化', desc: '複数の領域が絡み合う応用力。' },
+    { name: '深奥', desc: '全体を見渡す、熟達の境地。' }
+  ];
   var TYPE_ORDER = ['role', 'cert', 'product', 'concept', 'topic'];
   var LEVEL_META = {
     beginner: { label: '入門', color: '#7dd3fc' },
@@ -38,7 +46,7 @@ window.SFMAPCore = (function () {
     });
     topics.forEach(function (t) {
       var n = { id: t.id, label: t.label, type: 'topic', category: t.category, level: t.level,
-        summary: t.summary, detail: t.detail, tags: t.tags || [],
+        summary: t.summary, detail: t.detail, tags: t.tags || [], sig: t.sig,
         prereq: t.prereq || [], anchorRefs: t.anchors || [], anchor: false,
         color: TYPE_META.topic.color, deg: 0 };
       nodes.push(n); byId[n.id] = n;
@@ -69,17 +77,51 @@ window.SFMAPCore = (function () {
     // content   : 詳細ボリューム = 機能量
     var prereqOut = {};
     links.forEach(function (l) { if (l.kind === 'prereq') prereqOut[l.source.id] = (prereqOut[l.source.id] || 0) + 1; });
-    var maxScore = 1;
     nodes.forEach(function (n) {
       if (n.anchor) { n.importance = 0; return; }
       var breadth = (n.anchorRefs || []).length;
-      var foundational = prereqOut[n.id] || 0;
+      var foundational = prereqOut[n.id] || 0;              // 何個のトピックがこれを前提にするか
       var content = (n.detail || '').length;
-      var lvlW = n.level === 'advanced' ? 1.12 : (n.level === 'intermediate' ? 1.05 : 1.0);
-      n.importance = (1 + breadth * 0.9 + foundational * 1.3 + Math.min(content / 850, 3)) * lvlW;
-      if (n.importance > maxScore) maxScore = n.importance;
+      var lvlBonus = n.level === 'advanced' ? 1.5 : (n.level === 'intermediate' ? 0.8 : 0);
+      // 重大度: 生成時に明示評価した sig(1-5) を主軸に。未設定(既存)は breadth+level から推定
+      var sig = (typeof n.sig === 'number' && n.sig >= 1) ? n.sig
+        : Math.max(1, Math.min(5, Math.round(2 + breadth * 0.35 + lvlBonus)));
+      n.sigEval = sig;
+      n.importance = sig * 3 + foundational * 1.2 + breadth * 0.5 + Math.min(content / 900, 2.2);
     });
-    nodes.forEach(function (n) { n.weight = n.anchor ? 1 : Math.min(1, n.importance / maxScore); });
+    // 重大性は「順位(パーセンタイル)」で均等に散らす — 少数の外れ値で全員が同サイズに潰れるのを防ぐ
+    var topicList = nodes.filter(function (n) { return !n.anchor; });
+    topicList.sort(function (a, b) { return a.importance - b.importance; });
+    var m = topicList.length;
+    topicList.forEach(function (n, i) { n.weight = m > 1 ? i / (m - 1) : 1; });
+    nodes.forEach(function (n) { if (n.anchor) n.weight = 1; });
+
+    // ---- 学習の深さ(prerequisite depth): 前提チェーンの最長 + レベル補正 ----
+    var depthMemo = {};
+    function calcDepth(n, stack) {
+      if (n.anchor) return 0;
+      if (depthMemo[n.id] !== undefined) return depthMemo[n.id];
+      if (stack[n.id]) return 0;              // 循環ガード
+      var pr = n.prereq || [], mx = 0;
+      stack[n.id] = 1;
+      for (var i = 0; i < pr.length; i++) {
+        var p = byId[pr[i]];
+        if (p && !p.anchor) { var d = calcDepth(p, stack) + 1; if (d > mx) mx = d; }
+      }
+      stack[n.id] = 0; depthMemo[n.id] = mx; return mx;
+    }
+    var maxRaw = 0.0001;
+    nodes.forEach(function (n) {
+      if (n.anchor) { n.depth = 0; n.rawDepth = 0; return; }
+      n.depth = calcDepth(n, {});
+      var lvlBonus = n.level === 'advanced' ? 1.6 : (n.level === 'intermediate' ? 0.7 : 0);
+      n.rawDepth = n.depth + lvlBonus;
+      if (n.rawDepth > maxRaw) maxRaw = n.rawDepth;
+    });
+    nodes.forEach(function (n) {
+      n.depthNorm = n.anchor ? 0 : Math.min(1, n.rawDepth / maxRaw);   // 0(浅い)〜1(深い)
+      n.depthTier = n.anchor ? 0 : Math.max(1, Math.min(5, Math.ceil(n.depthNorm * 5) || 1));
+    });
 
     var adj = {};
     nodes.forEach(function (n) { adj[n.id] = []; });
@@ -201,6 +243,16 @@ window.SFMAPCore = (function () {
     html += '</div>';
     html += '<div class="p-title">' + esc(n.label) + '</div>';
     if (n.summary) html += '<div class="p-summary">' + esc(n.summary) + '</div>';
+    if (!n.anchor && n.depthTier) {
+      var dt = DEPTH_TIERS[n.depthTier - 1] || DEPTH_TIERS[0];
+      var segs = '';
+      for (var di = 1; di <= 5; di++) segs += '<span class="dseg' + (di <= n.depthTier ? ' on' : '') + '"></span>';
+      html += '<div class="p-depth">'
+        + '<div class="p-depth-top"><span class="p-depth-label">深度</span><span class="p-depth-tier">Lv.' + n.depthTier + ' ' + dt.name + '</span></div>'
+        + '<div class="depth-track">' + segs + '</div>'
+        + '<div class="p-depth-desc">' + esc(dt.desc) + ' — 深いほど、多くの前提知識の先にあるテーマです。</div>'
+        + '</div>';
+    }
     html += '<div class="p-body">' + mdToHtml(n.detail || '') + '</div>';
     html += buildRefs(n);
     html += buildRelated(n, adj);

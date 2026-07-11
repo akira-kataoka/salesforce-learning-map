@@ -22,6 +22,78 @@
   .view-toggle a{padding:0 14px;height:38px;display:flex;align-items:center;font-size:12.5px;font-weight:700;color:var(--text-dim);text-decoration:none;transition:.15s}
   .view-toggle a.active{background:linear-gradient(135deg,#1a9bd7,#0d7fbf);color:#fff}
   .view-toggle a:not(.active):hover{color:var(--text);background:var(--border)}
+
+  /* ===== ニューロンマップ UI 洗練(ダーク専用) ===== */
+  body{background:#080a12}
+  #topbar{background:linear-gradient(180deg,rgba(12,15,24,0.82),rgba(12,15,24,0.32) 70%,transparent);border-bottom:none;backdrop-filter:blur(10px)}
+  .brand-mark{background:radial-gradient(circle at 35% 30%,#7fd4ff,#3f7fd6 60%,#7a4fe0);box-shadow:0 0 18px rgba(90,150,255,0.55),0 0 4px rgba(150,120,255,0.6)}
+  #legend{
+    backdrop-filter:blur(18px) saturate(1.25);
+    background:linear-gradient(180deg,rgba(20,25,38,0.86),rgba(11,14,23,0.80));
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 24px 70px -24px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.06);
+    border-radius:16px;
+  }
+  .legend-title{
+    font-weight:800;letter-spacing:.2px;
+    background:linear-gradient(90deg,#93d4ff,#c6a8ff);-webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .legend-lead{font-size:11.5px;line-height:1.65;color:rgba(196,206,226,0.7);margin:6px 0 2px}
+  .legend-note{font-size:10.5px;line-height:1.55;color:rgba(158,172,198,0.68);margin:8px 0 2px;padding:4px 0 4px 9px;border-left:2px solid rgba(120,150,230,0.4)}
+  .legend-sub{color:rgba(150,164,190,0.78);letter-spacing:.4px}
+  .type-chip,.lvl-chip{transition:transform .12s ease,background .15s,opacity .15s}
+  .type-chip:hover,.lvl-chip:hover{transform:translateY(-1px)}
+  .type-chip.off,.lvl-chip.off{opacity:0.34}
+  .pill,.icon-btn{transition:transform .12s ease,background .15s,color .15s}
+  .pill:hover,.icon-btn:hover{transform:translateY(-1px)}
+  .pill.active{box-shadow:0 0 0 1px rgba(120,180,255,0.4),0 6px 18px -8px rgba(80,150,255,0.6)}
+  #panel{
+    backdrop-filter:blur(20px) saturate(1.2);
+    background:linear-gradient(180deg,rgba(18,22,34,0.94),rgba(10,13,21,0.92));
+    border-left:1px solid rgba(255,255,255,0.08);
+    box-shadow:-30px 0 80px -30px rgba(0,0,0,0.85);
+  }
+  #tooltip{backdrop-filter:blur(12px);background:rgba(14,18,28,0.9);border:1px solid rgba(255,255,255,0.09);box-shadow:0 14px 40px -14px rgba(0,0,0,0.8)}
+  #stats{color:rgba(150,164,190,0.6);letter-spacing:.3px}
+  .ll-size{width:22px;flex:none;display:flex;align-items:center;justify-content:center}
+  .ll-size::before{content:"";border-radius:50%;background:radial-gradient(circle at 35% 30%,#bfe0ff,#4f8fe0);box-shadow:0 0 8px rgba(96,165,250,.7)}
+  .ll-size.s::before{width:6px;height:6px}
+  .ll-size.l::before{width:15px;height:15px}
+
+  /* Progress HUD (習得の軌跡) */
+  #hud{position:absolute;right:22px;bottom:26px;display:flex;align-items:center;gap:12px;padding:10px 16px 10px 10px;
+    border-radius:16px;background:linear-gradient(180deg,rgba(20,25,38,0.82),rgba(11,14,23,0.78));
+    border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(16px);
+    box-shadow:0 18px 50px -20px rgba(0,0,0,0.8),inset 0 1px 0 rgba(255,255,255,0.05);z-index:20}
+  #hud .hud-svg{width:52px;height:52px;flex:none;filter:drop-shadow(0 0 6px rgba(255,214,102,0.35))}
+  #hud .hud-bg{fill:none;stroke:rgba(255,255,255,0.09);stroke-width:5}
+  #hud .hud-fg{fill:none;stroke:#ffd666;stroke-width:5;stroke-linecap:round;transition:stroke-dashoffset .7s cubic-bezier(.22,1,.36,1)}
+  #hud .hud-title{font-size:11px;font-weight:700;letter-spacing:.4px;color:#ffe6a3}
+  #hud .hud-count{font-size:12.5px;color:var(--text-dim);margin-top:2px}
+  #hud .hud-count #hud-num{font-size:17px;font-weight:800;color:#fff;letter-spacing:.3px}
+  @media(max-width:640px){#hud{right:12px;bottom:14px;transform:scale(.9);transform-origin:bottom right}}
+
+  /* Depth meter (深度) */
+  .p-depth{margin:14px 0 4px;padding:12px 14px;border-radius:12px;background:rgba(124,92,246,0.08);border:1px solid rgba(124,92,246,0.22)}
+  .p-depth-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+  .p-depth-label{font-size:11px;font-weight:700;letter-spacing:.6px;color:#b9a8ff}
+  .p-depth-tier{font-size:13px;font-weight:800;color:#dcd2ff}
+  .depth-track{display:flex;gap:5px}
+  .depth-track .dseg{flex:1;height:7px;border-radius:4px;background:rgba(255,255,255,0.08)}
+  .depth-track .dseg.on:nth-child(1){background:#dff3ff}
+  .depth-track .dseg.on:nth-child(2){background:#9ec9ff}
+  .depth-track .dseg.on:nth-child(3){background:#7d8dfd}
+  .depth-track .dseg.on:nth-child(4){background:#7c5cf6}
+  .depth-track .dseg.on:nth-child(5){background:#6d28d9}
+  .p-depth-desc{margin-top:8px;font-size:11px;line-height:1.55;color:var(--text-dim)}
+
+  /* Mastery button (習得の灯) */
+  .p-actions{margin:12px 0 2px}
+  .btn-learn{width:100%;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,214,102,0.4);
+    background:linear-gradient(180deg,rgba(255,214,102,0.14),rgba(255,214,102,0.06));color:#ffe6a3;
+    font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s cubic-bezier(.22,1,.36,1),box-shadow .2s,background .2s}
+  .btn-learn:hover{transform:translateY(-1px);box-shadow:0 10px 26px -12px rgba(255,214,102,0.6)}
+  .btn-learn.is-learned{background:linear-gradient(180deg,rgba(255,214,102,0.28),rgba(255,196,60,0.18));color:#fff;border-color:rgba(255,214,102,0.7);box-shadow:0 0 0 1px rgba(255,214,102,0.35),0 0 22px -6px rgba(255,214,102,0.6)}
 </style>
 </head>
 <body>
@@ -31,7 +103,7 @@
       <span class="brand-mark">☁︎</span>
       <div class="brand-text">
         <h1>Salesforce 学習マップ <span style="opacity:.6;font-weight:600">3D</span></h1>
-        <p>Three.js で立体探索するナレッジグラフ</p>
+        <p>知識はつながって、光になる。</p>
       </div>
     </div>
     <div class="search-wrap">
@@ -46,47 +118,45 @@
       </div>
       <button id="btn-rotate" class="pill active" title="自動回転">回転</button>
       <button id="btn-reset" class="pill" title="ビューをリセット">リセット</button>
-      <button id="btn-theme" class="icon-btn" title="テーマ切替">◐</button>
       <button id="btn-help" class="icon-btn" title="使い方">?</button>
     </div>
   </header>
 
   <aside id="legend">
-    <div class="legend-title">凡例 / フィルタ</div>
-    <div class="legend-sub">グループ化(クラスタ)</div>
-    <select id="group-axis" class="group-select">
-      <option value="product">製品ごと</option>
-      <option value="cert">認定資格ごと</option>
-      <option value="concept">概念ごと</option>
-      <option value="role">職種ごと</option>
-      <option value="none">グループ化しない</option>
-    </select>
-    <div class="legend-sub">種別</div>
+    <div class="legend-title">ニューロン学習マップ</div>
+    <p class="legend-lead">学習項目が神経細胞のように有機的につながる知識ネットワーク。光の信号が関係を伝わります。</p>
+    <div class="legend-sub">種別でしぼり込む</div>
     <div id="legend-types"></div>
+    <div class="legend-note">種別をオフにすると、その種別だけに繋がるトピックも一緒に消えます。</div>
     <div class="legend-sub">レベル</div>
     <div id="legend-levels" class="lvl-row">
       <button class="lvl-chip" data-level="beginner"><i class="lvl-dot b"></i>入門</button>
       <button class="lvl-chip" data-level="intermediate"><i class="lvl-dot i"></i>中級</button>
       <button class="lvl-chip" data-level="advanced"><i class="lvl-dot a"></i>上級</button>
     </div>
-    <div class="legend-sub">リンク(関係)</div>
-    <div id="legend-links" class="link-legend">
-      <div class="ll-row"><span class="ll-line contains"></span>包含:グループがトピックを束ねる</div>
-      <div class="ll-row"><span class="ll-line prereq"></span>前提:学習の順序</div>
-      <div class="ll-row"><span class="ll-line rel"></span>グループ同士の関係</div>
-    </div>
     <div class="legend-sub">球の大きさ = 学習の重大性</div>
     <div class="link-legend">
-      <div class="ll-row"><span class="ll-size s"></span>小 = 個別・限定的な機能</div>
-      <div class="ll-row"><span class="ll-size l"></span>大 = 機能量が多い/多くの土台になる重要トピック</div>
+      <div class="ll-row"><span class="ll-size s"></span>小 … 個別・限定的な機能</div>
+      <div class="ll-row"><span class="ll-size l"></span>大 … 機能量が多い/多くの土台になる要点</div>
     </div>
-    <div class="legend-hint">ドラッグ=回転 / ホイール=ズーム<br>右ドラッグ=移動 / クリック=詳細</div>
+    <div class="legend-hint">ドラッグ=回転 / ホイール=ズーム<br>クリック=そのノードに寄って詳細</div>
   </aside>
 
   <div id="scene3d"></div>
   <div id="labels3d"></div>
   <div id="tooltip" class="hidden"></div>
   <div id="stats"></div>
+
+  <div id="hud" title="学んだトピックに灯をともすと、あなたの知識ネットワークが広がります">
+    <svg viewBox="0 0 60 60" class="hud-svg" aria-hidden="true">
+      <circle cx="30" cy="30" r="26" class="hud-bg"></circle>
+      <circle id="hud-ring" cx="30" cy="30" r="26" class="hud-fg" transform="rotate(-90 30 30)"></circle>
+    </svg>
+    <div class="hud-text">
+      <div class="hud-title">習得の軌跡</div>
+      <div class="hud-count"><span id="hud-num">0</span> <span id="hud-den">/ 0 習得</span></div>
+    </div>
+  </div>
 
   <section id="panel" class="hidden" aria-live="polite">
     <button id="panel-close" aria-label="閉じる">×</button>
@@ -96,13 +166,13 @@
   <div id="help-modal" class="modal hidden">
     <div class="modal-box">
       <button id="help-close" class="modal-close" aria-label="閉じる">×</button>
-      <h2>3D ナレッジグラフの使い方</h2>
-      <p>Salesforceの学習マップを Three.js で立体化した版です。ノードが宇宙の星のように配置され、関係が光の線でつながります。</p>
+      <h2>ニューロン学習マップの見かた</h2>
+      <p>Salesforceの学習項目を、神経細胞(ニューロン)のように<b>有機的につながる知識ネットワーク</b>として可視化しました。関係のあるノード同士をシナプスがつなぎ、<b>光の信号</b>がその間を流れます。</p>
       <ul>
-        <li><b>ドラッグ</b>で視点を回転、<b>ホイール</b>でズーム、<b>右ドラッグ</b>で平行移動できます。</li>
-        <li><b>ノードにマウスを重ねる</b>と名前が、<b>クリック</b>で右側に詳細と関連ノードが開きます。</li>
-        <li>色=種別。<b>製品・職種・資格・概念はすべて「グループ」</b>で、トピックはその中の<b>最小単位</b>です。線=グループ色の<b>包含</b>、矢印付き破線の<b>前提</b>、グループ同士の<b>関係</b>。</li>
-        <li>凡例で種別・レベルを絞り込み、検索で項目を探せます。「回転」ボタンで自動回転を切替。</li>
+        <li><b>ドラッグ</b>で回転、<b>ホイール</b>でズーム、<b>右ドラッグ</b>で平行移動。</li>
+        <li><b>ノードにマウスを重ねる</b>と概要、<b>クリック</b>でそのノードに寄り、右側に詳細と関連が開きます。</li>
+        <li><b>色</b>=種別(製品・職種・資格・概念・トピック)。<b>球の大きさ</b>=学習の重大性(機能量・多くの土台になるほど大)。</li>
+        <li>凡例で種別・レベルを絞り込み。種別をオフにすると、その種別だけに繋がるトピックも一緒に消え、見たい範囲だけが残ります。</li>
       </ul>
       <h3>おすすめの入口</h3>
       <div id="help-entrypoints"></div>

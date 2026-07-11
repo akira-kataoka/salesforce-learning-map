@@ -7,6 +7,23 @@
   var nodes = G.nodes, links = G.links, byId = G.byId, adj = G.adj;
   var TYPE_META = SFMAPCore.TYPE_META, LEVEL_META = SFMAPCore.LEVEL_META;
 
+  // 深さの色(浅い→深い)。種別色に少し混ぜて「深度」を体感させる / 習得・道の色
+  var DEPTH_COLORS = [0xdff3ff, 0x9ec9ff, 0x7d8dfd, 0x7c5cf6, 0x6d28d9].map(function (h) { return new THREE.Color(h); });
+  function depthColorFor(dn) {
+    var t = Math.max(0, Math.min(1, dn)) * 4, i = Math.min(3, Math.floor(t)), f = t - i;
+    return DEPTH_COLORS[i].clone().lerp(DEPTH_COLORS[i + 1], f);
+  }
+  var MASTERY = new THREE.Color(0xffd666), FRONTIER = new THREE.Color(0x4ade80), PATHCOL = new THREE.Color(0x9adcff);
+
+  // リング(習得=金 / フロンティア=緑 の縁取り)テクスチャ
+  function makeRingTexture() {
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 5; g.beginPath(); g.arc(32, 32, 25, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,1)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 25, 0, Math.PI * 2); g.stroke();
+    var tex = new THREE.CanvasTexture(c); tex.needsUpdate = true; return tex;
+  }
+
   /* ---------- seed 3D positions (golden-spiral shell) + radii ---------- */
   var N = nodes.length;
   nodes.forEach(function (n, i) {
@@ -22,10 +39,14 @@
       var base = { concept: 5.4, product: 5.2, role: 5.0, cert: 3.5 }[n.type] || 5;
       n.r = base + Math.min(3.4, Math.sqrt(n.deg) * 0.75);
     } else {
-      // トピックは重大性(機能量・優先度)で大きさを表現: 1.6〜5.6
-      n.r = 1.6 + Math.sqrt(n.weight) * 4.0;
+      // トピックは重大性(機能量・優先度)を順位で均等に散らして表現: 1.9〜7.4
+      n.r = 1.9 + n.weight * 5.5;
     }
+    // 反発の質量: ハブ(種別)ほど強く反発させ、中央に固まらず神経節のように広がる
+    n.chg = n.anchor ? 2.4 : 1.0;
     n.col = new THREE.Color(n.color);
+    // 表示色 = 種別色に「深さの色」を少し混ぜる(種別=色相 / 深さ=色味の変化)
+    n.dispCol = n.anchor ? n.col.clone() : n.col.clone().lerp(depthColorFor(n.depthNorm || 0), 0.28 * (n.depthNorm || 0) + 0.06);
   });
 
   /* ---------- renderer / scene / camera ---------- */
@@ -44,11 +65,10 @@
   labelRenderer.domElement.style.top = '0';
 
   var scene = new THREE.Scene();
-  var THEME = { dark: { bg: 0x0b0e14, fog: 0.0013, bloom: 0.42, thr: 0.32 }, light: { bg: 0xeef1f8, fog: 0.0013, bloom: 0.26, thr: 0.46 } };
-  var themeName = (function () { try { return localStorage.getItem('sfmap-theme') || 'dark'; } catch (e) { return 'dark'; } })();
+  var DARK = { bg: 0x080a12, fog: 0.0012, bloom: 0.32, thr: 0.6 };
 
   var camera = new THREE.PerspectiveCamera(58, W / H, 1, 6000);
-  var DIST0 = 440;
+  var DIST0 = 560;
   camera.position.set(0, 0, DIST0);
 
   var controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -60,22 +80,51 @@
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.4;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-  var pl = new THREE.PointLight(0xffffff, 0.6); pl.position.set(200, 200, 300); scene.add(pl);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  var pl = new THREE.PointLight(0xffffff, 0.5); pl.position.set(200, 200, 300); scene.add(pl);
 
-  /* ---------- starfield ---------- */
+  /* ---------- soft radial glow texture (星のにじみ・オーラに使い回す) ---------- */
+  function makeGlowTexture() {
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var g = c.getContext('2d');
+    var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.22, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.14)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+    var tex = new THREE.CanvasTexture(c); tex.needsUpdate = true; return tex;
+  }
+  var GLOW_TEX = makeGlowTexture();
+  var RING_TEX = makeRingTexture();
+
+  /* ---------- starfield (奥行き2層) + かすかな星雲 ---------- */
   (function () {
-    var g = new THREE.BufferGeometry(), n = 900, pos = new Float32Array(n * 3);
-    for (var i = 0; i < n; i++) {
-      var r = 1400 + Math.random() * 1600;
-      var th = Math.acos(2 * Math.random() - 1), ph = Math.random() * Math.PI * 2;
-      pos[i * 3] = r * Math.sin(th) * Math.cos(ph);
-      pos[i * 3 + 1] = r * Math.sin(th) * Math.sin(ph);
-      pos[i * 3 + 2] = r * Math.cos(th);
+    function layer(count, rMin, rMax, size, col, opacity) {
+      var g = new THREE.BufferGeometry(), pos = new Float32Array(count * 3);
+      for (var i = 0; i < count; i++) {
+        var r = rMin + Math.random() * (rMax - rMin);
+        var th = Math.acos(2 * Math.random() - 1), ph = Math.random() * Math.PI * 2;
+        pos[i * 3] = r * Math.sin(th) * Math.cos(ph);
+        pos[i * 3 + 1] = r * Math.sin(th) * Math.sin(ph);
+        pos[i * 3 + 2] = r * Math.cos(th);
+      }
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      var m = new THREE.PointsMaterial({ color: col, size: size, map: GLOW_TEX, transparent: true, opacity: opacity, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+      var pts = new THREE.Points(g, m); pts.renderOrder = -2; scene.add(pts); return pts;
     }
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    var m = new THREE.PointsMaterial({ color: 0x8aa0c8, size: 2.2, transparent: true, opacity: 0.55, sizeAttenuation: false });
-    scene.add(new THREE.Points(g, m));
+    layer(1300, 1500, 3000, 7, 0xaec4ea, 0.55);   // 遠くの細かい星
+    layer(420, 1100, 2200, 14, 0xe7f0ff, 0.7);     // 近めの明るい星
+    // 星雲(大きく淡い色の雲)
+    var neb = [0x3b4da8, 0x1f6f8c, 0x6a2f7a, 0x24506b];
+    for (var k = 0; k < 5; k++) {
+      var mat = new THREE.SpriteMaterial({ map: GLOW_TEX, color: neb[k % neb.length], transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false });
+      var sp = new THREE.Sprite(mat);
+      var rr = 1300 + Math.random() * 900, th = Math.acos(2 * Math.random() - 1), ph = Math.random() * Math.PI * 2;
+      sp.position.set(rr * Math.sin(th) * Math.cos(ph), rr * Math.sin(th) * Math.sin(ph), rr * Math.cos(th));
+      sp.scale.setScalar(900 + Math.random() * 700); sp.renderOrder = -1;
+      scene.add(sp);
+    }
   })();
 
   /* ---------- node meshes ---------- */
@@ -83,7 +132,7 @@
   var group = new THREE.Group(); scene.add(group);
   nodes.forEach(function (n) {
     var mat = new THREE.MeshStandardMaterial({
-      color: n.col, emissive: n.col, emissiveIntensity: n.anchor ? 0.5 : 0.32,
+      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.42 : 0.26,
       metalness: 0.3, roughness: 0.4, transparent: true, opacity: 0.96
     });
     var mesh = new THREE.Mesh(sphereGeo, mat);
@@ -92,6 +141,18 @@
     mesh.userData.node = n;
     n.mesh = mesh; n.mat = mat; n.baseEmissive = mat.emissiveIntensity;
     group.add(mesh);
+    // やわらかいグロー(星のにじみ) — 加算スプライトをノードの子として付ける
+    var glowMat = new THREE.SpriteMaterial({ map: GLOW_TEX, color: n.dispCol, transparent: true, opacity: n.anchor ? 0.24 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
+    var glow = new THREE.Sprite(glowMat);
+    glow.scale.setScalar(n.anchor ? 3.4 : 2.6);
+    mesh.add(glow);
+    n.glowMat = glowMat; n.baseGlow = glowMat.opacity;
+    // 習得/フロンティアの縁取りリング(既定は非表示)
+    if (!n.anchor) {
+      var ringMat = new THREE.SpriteMaterial({ map: RING_TEX, color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+      var ring = new THREE.Sprite(ringMat); ring.scale.setScalar(2.7); mesh.add(ring);
+      n.ringMat = ringMat; n.ring = ring;
+    }
     // anchor labels
     if (n.anchor) {
       var el = document.createElement('div');
@@ -105,7 +166,7 @@
   });
 
   /* ---------- links ---------- */
-  var GRAY = new THREE.Color(0x2b3448), AMBER = new THREE.Color(0xd0a24a);
+  var GRAY = new THREE.Color(0x33405e), AMBER = new THREE.Color(0xd0a24a);
   var lpos = new Float32Array(links.length * 6);
   var lcol = new Float32Array(links.length * 6);
   // 製品/資格/概念/職種→トピックはグループ色で描く(包含)。前提=アンバー、アンカー間=グレー
@@ -118,6 +179,8 @@
     return GRAY.clone().multiplyScalar(0.6);
   }
   links.forEach(function (l) { l.baseCol = baseLinkColor(l); });
+  // ハブ同士(種別間)のリンクは長く弱く — 種別が中央に固まらず放射状に広がるように
+  links.forEach(function (l) { if (l.kind === 'anchor') { l.len = 260; l.strength = 0.045; } });
   var lgeo = new THREE.BufferGeometry();
   lgeo.setAttribute('position', new THREE.BufferAttribute(lpos, 3));
   lgeo.setAttribute('color', new THREE.BufferAttribute(lcol, 3));
@@ -153,25 +216,20 @@
   /* ---------- bloom composer ---------- */
   var composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
-  var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), THEME[themeName].bloom, 0.6, THEME[themeName].thr);
+  var bloom = new THREE.UnrealBloomPass(new THREE.Vector2(W, H), DARK.bloom, 0.7, DARK.thr);
   composer.addPass(bloom);
 
-  function applyTheme(name) {
-    themeName = name;
-    document.documentElement.setAttribute('data-theme', name);
-    try { localStorage.setItem('sfmap-theme', name); } catch (e) {}
-    var t = THEME[name];
-    scene.background = new THREE.Color(t.bg);
-    scene.fog = new THREE.FogExp2(t.bg, t.fog);
-    bloom.strength = t.bloom; bloom.threshold = t.thr;
-  }
-  applyTheme(themeName);
+  (function applyDark() {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    scene.background = new THREE.Color(DARK.bg);
+    scene.fog = new THREE.FogExp2(DARK.bg, DARK.fog);
+  })();
 
   /* ---------- physics (3D force) ---------- */
   var alpha = 1, running = true;
   function physics() {
     var i, j, a, b, dx, dy, dz, d2, dist, f;
-    var K = 430, MAXF = 110;
+    var K = 520, MAXF = 130;
     for (i = 0; i < N; i++) {
       a = nodes[i];
       for (j = i + 1; j < N; j++) {
@@ -179,9 +237,9 @@
         dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
         d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; d2 = dx * dx + dy * dy + dz * dz + 0.01; }
-        if (d2 > 160000) continue;
+        if (d2 > 360000) continue;
         dist = Math.sqrt(d2);
-        f = (K / d2) * alpha; if (f > MAXF) f = MAXF;
+        f = (K / d2) * alpha * a.chg * b.chg; if (f > MAXF) f = MAXF;
         var fx = dx / dist * f, fy = dy / dist * f, fz = dz / dist * f;
         a.vx -= fx; a.vy -= fy; a.vz -= fz;
         b.vx += fx; b.vy += fy; b.vz += fz;
@@ -189,27 +247,16 @@
     }
     for (i = 0; i < links.length; i++) {
       var l = links[i]; a = l.source; b = l.target;
-      var tlen = l.len, tstr = l.strength;
-      if (groupMode3) {
-        if (GK3[l.kind]) { if (b.group === a.id) { tlen = 36; tstr = 0.5; } else continue; }
-        else if (l.kind === 'prereq') { tstr = 0.05; }
-        else { tstr = 0.03; }
-      }
       dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
       dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
-      f = (dist - tlen) / dist * alpha * tstr;
+      f = (dist - l.len) / dist * alpha * l.strength;
       a.vx += dx * f; a.vy += dy * f; a.vz += dz * f;
       b.vx -= dx * f; b.vy -= dy * f; b.vz -= dz * f;
     }
     var VMAX = 14;
     for (i = 0; i < N; i++) {
       a = nodes[i];
-      if (groupMode3) {
-        if (a.isGroupCenter && a.slot) { a.vx += (a.slot[0] - a.x) * alpha * 0.08; a.vy += (a.slot[1] - a.y) * alpha * 0.08; a.vz += (a.slot[2] - a.z) * alpha * 0.08; }
-        else if (!a.group) { a.vx += (-a.x) * alpha * 0.004; a.vy += (-a.y) * alpha * 0.004; a.vz += (-a.z) * alpha * 0.004; }
-      } else {
-        a.vx += (-a.x) * alpha * 0.013; a.vy += (-a.y) * alpha * 0.013; a.vz += (-a.z) * alpha * 0.013;
-      }
+      a.vx += (-a.x) * alpha * 0.0032; a.vy += (-a.y) * alpha * 0.0032; a.vz += (-a.z) * alpha * 0.0032;
       a.vx *= 0.6; a.vy *= 0.6; a.vz *= 0.6;
       if (a.vx > VMAX) a.vx = VMAX; else if (a.vx < -VMAX) a.vx = -VMAX;
       if (a.vy > VMAX) a.vy = VMAX; else if (a.vy < -VMAX) a.vy = -VMAX;
@@ -223,35 +270,135 @@
   }
   function reheat(v) { alpha = Math.max(alpha, v || 0.5); running = true; }
 
+  /* ---------- prerequisite graph (前提の連なり) ---------- */
+  var preParents = {}, preChildren = {};
+  nodes.forEach(function (n) { preParents[n.id] = []; preChildren[n.id] = []; });
+  links.forEach(function (l) { if (l.kind === 'prereq') { preChildren[l.source.id].push(l.target.id); preParents[l.target.id].push(l.source.id); } });
+  function walk(id, mapObj) {
+    var seen = {}, st = [id];
+    while (st.length) { var c = st.pop(); (mapObj[c] || []).forEach(function (p) { if (!seen[p]) { seen[p] = 1; st.push(p); } }); }
+    return seen;
+  }
+
+  /* ---------- mastery (習得の灯) ---------- */
+  var LEARN_KEY = 'sfmap-learned-3d', learned = {};
+  try { (JSON.parse(localStorage.getItem(LEARN_KEY) || '[]')).forEach(function (id) { if (byId[id]) learned[id] = 1; }); } catch (e) {}
+  function saveLearned() { try { localStorage.setItem(LEARN_KEY, JSON.stringify(Object.keys(learned))); } catch (e) {} }
+  var topicTotal = nodes.filter(function (n) { return !n.anchor; }).length;
+  function isFrontier(n) {
+    if (n.anchor || learned[n.id]) return false;
+    var ps = preParents[n.id]; if (!ps.length) return false;
+    for (var i = 0; i < ps.length; i++) if (!learned[ps[i]]) return false;
+    return true;   // 前提をすべて習得済みの「次に学べる」トピック
+  }
+  var MASTERY_LINK = MASTERY.clone().multiplyScalar(0.75);
+  function recolorBase() {
+    for (var i = 0; i < links.length; i++) {
+      var l = links[i];
+      l.baseCol = (learned[l.source.id] && learned[l.target.id]) ? MASTERY_LINK : baseLinkColor(l);
+    }
+  }
+  function updateHUD(count) {
+    var ring = document.getElementById('hud-ring');
+    var pct = topicTotal ? count / topicTotal : 0;
+    if (ring) { var C = 2 * Math.PI * 26; ring.style.strokeDasharray = C; ring.style.strokeDashoffset = C * (1 - pct); }
+    var num = document.getElementById('hud-num'); if (num) num.textContent = count;
+    var den = document.getElementById('hud-den'); if (den) den.textContent = '/ ' + topicTotal + ' 習得';
+  }
+  function refreshStates() {
+    var count = 0;
+    nodes.forEach(function (n) {
+      n.learned = !!learned[n.id];
+      n.frontier = isFrontier(n);
+      if (n.learned) count++;
+      n.mat.opacity = 0.96;
+      n.mat.emissiveIntensity = n.baseEmissive * (n.learned ? 1.35 : 1);
+      if (n.glowMat) { n.glowMat.color.copy(n.learned ? MASTERY : n.dispCol); n.glowMat.opacity = n.learned ? n.baseGlow * 1.7 : n.baseGlow; }
+      if (n.labelEl) n.labelEl.style.opacity = (n.type === 'cert') ? '0' : '0.9';
+      if (n.ringMat) {
+        if (n.learned) { n.ringMat.color.copy(MASTERY); n.ringMat.opacity = 0.9; }
+        else if (n.frontier) { n.ringMat.color.copy(FRONTIER); n.ringMat.opacity = 0.7; }
+        else { n.ringMat.opacity = 0; }
+      }
+    });
+    recolorBase();
+    if (!selectedId) writeLinkColors(null);
+    updateHUD(count);
+  }
+
   /* ---------- highlight / selection ---------- */
-  var selectedId = null;
-  function setHighlight(hl) {
+  var selectedId = null, activePath = null;
+  function setHighlight(hl, roleMap) {
     nodes.forEach(function (n) {
       var dim = hl && !hl[n.id];
-      n.mat.opacity = dim ? 0.1 : 0.96;
-      n.mat.emissiveIntensity = dim ? 0.04 : (n.id === selectedId ? 0.95 : n.baseEmissive);
-      if (n.labelEl) n.labelEl.style.opacity = dim ? '0.08' : (n.type === 'cert' ? (hl ? '0.85' : '0') : '0.9');
+      n.mat.opacity = dim ? 0.12 : 0.96;
+      n.mat.emissiveIntensity = dim ? 0.03 : (n.id === selectedId ? 1.0 : n.baseEmissive * (n.learned ? 1.35 : 1));
+      var role = roleMap && roleMap[n.id];
+      if (n.glowMat) {
+        n.glowMat.opacity = dim ? 0.03 : (n.id === selectedId ? 0.98 : (n.learned ? n.baseGlow * 1.7 : n.baseGlow));
+        n.glowMat.color.copy(role === 'anc' ? PATHCOL : role === 'desc' ? FRONTIER : (n.learned ? MASTERY : n.dispCol));
+      }
+      if (n.ringMat) n.ringMat.opacity = dim ? 0 : (n.learned ? 0.9 : n.frontier ? 0.7 : 0);
+      if (n.labelEl) n.labelEl.style.opacity = dim ? '0.05' : (n.type === 'cert' ? '0.85' : '0.9');
     });
     writeLinkColors(hl);
+  }
+  function highlightFor(id) {
+    var anc = walk(id, preParents), desc = walk(id, preChildren), nb = G.neighborSet(id);
+    var hl = {}, roleMap = {};
+    hl[id] = 1; roleMap[id] = 'sel';
+    Object.keys(anc).forEach(function (k) { hl[k] = 1; roleMap[k] = 'anc'; });
+    Object.keys(desc).forEach(function (k) { hl[k] = 1; if (!roleMap[k]) roleMap[k] = 'desc'; });
+    Object.keys(nb).forEach(function (k) { hl[k] = 1; if (!roleMap[k]) roleMap[k] = 'nb'; });
+    setHighlight(hl, roleMap);
+    activePath = [];
+    for (var i = 0; i < links.length; i++) { var l = links[i]; if (l.kind === 'prereq' && hl[l.source.id] && hl[l.target.id]) activePath.push(l); }
+    if (!activePath.length) activePath = null;
   }
 
   /* ---------- panel ---------- */
   var panel = document.getElementById('panel');
   var panelContent = document.getElementById('panel-content');
+  function injectPanelExtras(n) {
+    if (n.anchor) return;
+    var bar = document.createElement('div'); bar.className = 'p-actions';
+    var on = !!learned[n.id];
+    var btn = document.createElement('button');
+    btn.className = 'btn-learn' + (on ? ' is-learned' : '');
+    btn.textContent = on ? '習得済み ✓' : '習得した — 灯をともす';
+    btn.addEventListener('click', function () { toggleLearned(n); });
+    bar.appendChild(btn);
+    var host = panelContent.querySelector('.p-depth');
+    if (host && host.parentNode) host.parentNode.insertBefore(bar, host.nextSibling);
+    else panelContent.insertBefore(bar, panelContent.firstChild);
+  }
+  function toggleLearned(n) {
+    if (learned[n.id]) delete learned[n.id]; else { learned[n.id] = 1; cascadePulse(n); }
+    saveLearned();
+    refreshStates();
+    if (selectedId) highlightFor(selectedId);
+    var btn = panelContent.querySelector('.btn-learn');
+    if (btn) { var on = !!learned[n.id]; btn.classList.toggle('is-learned', on); btn.textContent = on ? '習得済み ✓' : '習得した — 灯をともす'; }
+  }
+  function cascadePulse(n) {
+    var out = links.filter(function (l) { return l.source.id === n.id || l.target.id === n.id; });
+    for (var i = 0; i < Math.min(8, out.length); i++) { var p = pulses[i]; if (!p) break; p.l = out[i]; p.t = 0; p.spd = 0.02; p.col = MASTERY.clone(); }
+  }
   function selectNode(id, focus) {
     var n = byId[id]; if (!n) return;
     selectedId = id;
-    setHighlight(G.neighborSet(id));
+    highlightFor(id);
     controls.autoRotate = false; document.getElementById('btn-rotate').classList.remove('active');
-    if (focus) { controls.target.set(n.x, n.y, n.z); }
+    if (focus) focusOn(n);
     panelContent.innerHTML = SFMAPCore.panelHTML(n, adj);
+    injectPanelExtras(n);
     panel.classList.remove('hidden');
     panel.scrollTop = 0;
     panelContent.querySelectorAll('.rel-chip').forEach(function (el) {
       el.addEventListener('click', function () { selectNode(el.getAttribute('data-id'), true); });
     });
   }
-  function deselect() { selectedId = null; setHighlight(null); panel.classList.add('hidden'); }
+  function deselect() { selectedId = null; activePath = null; refreshStates(); panel.classList.add('hidden'); }
   document.getElementById('panel-close').addEventListener('click', deselect);
 
   /* ---------- raycast hover / click ---------- */
@@ -274,7 +421,7 @@
     if (n !== hoverNode) {
       if (hoverNode) hoverNode.mesh.scale.setScalar(hoverNode.r);
       hoverNode = n;
-      if (n) n.mesh.scale.setScalar(n.r * 1.35);
+      if (n) n.mesh.scale.setScalar(n.r * 1.14);
       renderer.domElement.style.cursor = n ? 'pointer' : 'grab';
     }
     if (n) {
@@ -298,9 +445,17 @@
   var typeEnabled = { product: true, role: true, cert: true, concept: true, topic: true };
   var levelEnabled = { beginner: true, intermediate: true, advanced: true };
   function nodeVisible(n) {
-    if (!typeEnabled[n.type]) return false;
-    if (n.type === 'topic' && n.level && !levelEnabled[n.level]) return false;
-    return true;
+    if (n.anchor) return !!typeEnabled[n.type];
+    // トピックはレベルで絞り込み。さらに「紐づく種別を消したら道連れで消える」ようにする(孤立を防ぎ分かりやすく)
+    if (!typeEnabled.topic) return false;
+    if (n.level && !levelEnabled[n.level]) return false;
+    var refs = n.anchorRefs || [];
+    if (!refs.length) return true;
+    for (var i = 0; i < refs.length; i++) {
+      var a = byId[refs[i]];
+      if (a && typeEnabled[a.type]) return true; // 有効な種別に1つでも繋がっていれば表示
+    }
+    return false; // 紐づく種別がすべて非表示 → このトピックも消える
   }
   function applyVisibility() {
     nodes.forEach(function (n) { n.mesh.visible = nodeVisible(n); });
@@ -357,7 +512,6 @@
     camera.position.set(0, 0, DIST0); controls.target.set(0, 0, 0);
     controls.autoRotate = true; btnRotate.classList.add('active');
   });
-  document.getElementById('btn-theme').addEventListener('click', function () { applyTheme(themeName === 'light' ? 'dark' : 'light'); });
 
   /* ---------- help ---------- */
   var hm = document.getElementById('help-modal');
@@ -382,53 +536,80 @@
     renderer.setSize(W, H); composer.setSize(W, H); labelRenderer.setSize(W, H);
   });
 
-  /* ---------- grouping (クラスタ) ---------- */
-  var GK3 = { contains: 1, covers: 1, category: 1, role: 1 };
-  var groupMode3 = false;
-  function fibSlot(i, n, R) {
-    var off = 2 / n, y = i * off - 1 + off / 2;
-    var rr = Math.sqrt(Math.max(0, 1 - y * y)), phi = i * 2.399963229;
-    return [Math.cos(phi) * rr * R, y * R, Math.sin(phi) * rr * R];
+  /* ---------- signal pulses (シナプスを流れる信号 = ニューロン発火) ---------- */
+  var PULSE_N = 90;
+  var pulses = [];
+  var pgeo = new THREE.BufferGeometry();
+  var ppos = new Float32Array(PULSE_N * 3);
+  var pcol = new Float32Array(PULSE_N * 3);
+  pgeo.setAttribute('position', new THREE.BufferAttribute(ppos, 3));
+  pgeo.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
+  var pmat = new THREE.PointsMaterial({ size: 7, map: GLOW_TEX, vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+  var pulseField = new THREE.Points(pgeo, pmat); pulseField.renderOrder = 3; scene.add(pulseField);
+  var PULSE_TINT = new THREE.Color(0xdfeaff);
+  function respawnPulse(p) {
+    // 選択中は「学びの道(前提チェーン)」を、通常は表示中の全リンクを流れる
+    var pool = (activePath && activePath.length) ? activePath : links;
+    var tries = 0, l = null;
+    do { l = pool[(Math.random() * pool.length) | 0]; tries++; }
+    while (tries < 12 && l && (!l.source.mesh.visible || !l.target.mesh.visible));
+    p.l = l; p.t = 0; p.spd = 0.006 + Math.random() * 0.016;
+    var base = (activePath && activePath.length) ? PATHCOL : (l ? l.source.col : PULSE_TINT);
+    p.col = base.clone().lerp(PULSE_TINT, 0.4);
   }
-  function computeBase(l) {
-    if (groupMode3 && GK3[l.kind] && l.target.group !== l.source.id) return BLACK.clone();
-    return baseLinkColor(l);
+  for (var pi = 0; pi < PULSE_N; pi++) { var p = { l: null, t: Math.random(), spd: 0.01 }; respawnPulse(p); pulses.push(p); }
+  function updatePulses() {
+    for (var i = 0; i < PULSE_N; i++) {
+      var p = pulses[i], l = p.l;
+      if (!l || !l.source.mesh.visible || !l.target.mesh.visible) { respawnPulse(p); l = p.l; if (!l) { ppos[i * 3] = ppos[i * 3 + 1] = ppos[i * 3 + 2] = 99999; continue; } }
+      p.t += p.spd;
+      if (p.t >= 1) { respawnPulse(p); l = p.l; if (!l) continue; }
+      var a = l.source, b = l.target, t = p.t, mt = t * t * (3 - 2 * t); // smooth
+      ppos[i * 3] = a.x + (b.x - a.x) * mt;
+      ppos[i * 3 + 1] = a.y + (b.y - a.y) * mt;
+      ppos[i * 3 + 2] = a.z + (b.z - a.z) * mt;
+      var fade = Math.sin(Math.PI * t); // 端で消え、中央で最も明るい
+      pcol[i * 3] = p.col.r * fade; pcol[i * 3 + 1] = p.col.g * fade; pcol[i * 3 + 2] = p.col.b * fade;
+    }
+    pgeo.attributes.position.needsUpdate = true;
+    pgeo.attributes.color.needsUpdate = true;
   }
-  function recolorLinks() {
-    for (var i = 0; i < links.length; i++) links[i].baseCol = computeBase(links[i]);
-    writeLinkColors(selectedId ? G.neighborSet(selectedId) : null);
+
+  /* ---------- smooth focus (選択ノードへカメラをなめらかに寄せる) ---------- */
+  var focusAnim = null;
+  function focusOn(n) {
+    var endT = new THREE.Vector3(n.x, n.y, n.z);
+    var dir = camera.position.clone().sub(controls.target).normalize();
+    var dist = Math.max(90, Math.min(220, camera.position.distanceTo(controls.target) * 0.55));
+    var endP = endT.clone().add(dir.multiplyScalar(dist));
+    focusAnim = { sT: controls.target.clone(), eT: endT, sP: camera.position.clone(), eP: endP, t: 0 };
   }
-  function assignGroups3d(axis) {
-    nodes.forEach(function (n) { n.group = null; n.isGroupCenter = false; n.slot = null; });
-    if (axis === 'none') { groupMode3 = false; recolorLinks(); reheat(1); return; }
-    var map = {};
-    nodes.forEach(function (n) {
-      if (n.anchor) return;
-      var refs = n.anchorRefs || [], g = null;
-      for (var i = 0; i < refs.length; i++) { var t = byId[refs[i]]; if (t && t.type === axis) { g = refs[i]; break; } }
-      n.group = g; if (g) (map[g] || (map[g] = [])).push(n);
-    });
-    var ids = Object.keys(map); ids.sort(function (a, b) { return map[b].length - map[a].length; });
-    var cnt = ids.length || 1, Rg = Math.max(170, cnt * 20);
-    ids.forEach(function (id, i) {
-      var sl = fibSlot(i, cnt, Rg), node = byId[id];
-      node.isGroupCenter = true; node.slot = sl; node.x = sl[0]; node.y = sl[1]; node.z = sl[2];
-    });
-    nodes.forEach(function (n) {
-      if (n.group && byId[n.group]) { var c = byId[n.group]; n.x = c.x + (Math.random() - 0.5) * 40; n.y = c.y + (Math.random() - 0.5) * 40; n.z = c.z + (Math.random() - 0.5) * 40; }
-    });
-    groupMode3 = true; recolorLinks(); reheat(1);
-  }
-  var gsel = document.getElementById('group-axis');
-  if (gsel) gsel.addEventListener('change', function () { deselect(); assignGroups3d(gsel.value); });
-  assignGroups3d('product');
 
   /* ---------- loop ---------- */
   applyVisibility();
-  var settleFrames = 0;
+  refreshStates();
+  function breathe(now) {
+    // 習得ノードはゆっくり呼吸、フロンティアはやわらかく明滅(点滅・ストロボは避ける)
+    var bs = 0.94 + 0.1 * Math.sin(now * 0.0016);
+    var sh = 0.42 + 0.28 * (0.5 + 0.5 * Math.sin(now * 0.0025));
+    for (var i = 0; i < N; i++) {
+      var n = nodes[i]; if (!n.ring || n.ringMat.opacity <= 0.001) continue;
+      if (n.learned) n.ring.scale.setScalar(2.7 * bs);
+      else if (n.frontier) n.ringMat.opacity = sh;
+    }
+  }
   function animate() {
     requestAnimationFrame(animate);
-    if (running) { physics(); updateLinkPositions(); settleFrames++; }
+    if (running) { physics(); updateLinkPositions(); }
+    updatePulses();
+    breathe((window.performance && performance.now) ? performance.now() : 0);
+    if (focusAnim) {
+      focusAnim.t += 0.05;
+      var e = focusAnim.t >= 1 ? 1 : (1 - Math.pow(1 - focusAnim.t, 3));
+      controls.target.lerpVectors(focusAnim.sT, focusAnim.eT, e);
+      camera.position.lerpVectors(focusAnim.sP, focusAnim.eP, e);
+      if (focusAnim.t >= 1) focusAnim = null;
+    }
     controls.update();
     composer.render();
     labelRenderer.render(scene, camera);
