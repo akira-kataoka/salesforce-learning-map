@@ -18,8 +18,13 @@
     n.y = rr * Math.sin(th) * Math.sin(ph);
     n.z = rr * Math.cos(th);
     n.vx = n.vy = n.vz = 0;
-    var base = { concept: 5.4, product: 5.2, role: 5.0, cert: 3.5, topic: 2.1 }[n.type];
-    n.r = base + Math.min(3.4, Math.sqrt(n.deg) * (n.anchor ? 0.75 : 0.42));
+    if (n.anchor) {
+      var base = { concept: 5.4, product: 5.2, role: 5.0, cert: 3.5 }[n.type] || 5;
+      n.r = base + Math.min(3.4, Math.sqrt(n.deg) * 0.75);
+    } else {
+      // トピックは重大性(機能量・優先度)で大きさを表現: 1.6〜5.6
+      n.r = 1.6 + Math.sqrt(n.weight) * 4.0;
+    }
     n.col = new THREE.Color(n.color);
   });
 
@@ -184,16 +189,27 @@
     }
     for (i = 0; i < links.length; i++) {
       var l = links[i]; a = l.source; b = l.target;
+      var tlen = l.len, tstr = l.strength;
+      if (groupMode3) {
+        if (GK3[l.kind]) { if (b.group === a.id) { tlen = 36; tstr = 0.5; } else continue; }
+        else if (l.kind === 'prereq') { tstr = 0.05; }
+        else { tstr = 0.03; }
+      }
       dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
       dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
-      f = (dist - l.len) / dist * alpha * l.strength;
+      f = (dist - tlen) / dist * alpha * tstr;
       a.vx += dx * f; a.vy += dy * f; a.vz += dz * f;
       b.vx -= dx * f; b.vy -= dy * f; b.vz -= dz * f;
     }
     var VMAX = 14;
     for (i = 0; i < N; i++) {
       a = nodes[i];
-      a.vx += (-a.x) * alpha * 0.013; a.vy += (-a.y) * alpha * 0.013; a.vz += (-a.z) * alpha * 0.013;
+      if (groupMode3) {
+        if (a.isGroupCenter && a.slot) { a.vx += (a.slot[0] - a.x) * alpha * 0.08; a.vy += (a.slot[1] - a.y) * alpha * 0.08; a.vz += (a.slot[2] - a.z) * alpha * 0.08; }
+        else if (!a.group) { a.vx += (-a.x) * alpha * 0.004; a.vy += (-a.y) * alpha * 0.004; a.vz += (-a.z) * alpha * 0.004; }
+      } else {
+        a.vx += (-a.x) * alpha * 0.013; a.vy += (-a.y) * alpha * 0.013; a.vz += (-a.z) * alpha * 0.013;
+      }
       a.vx *= 0.6; a.vy *= 0.6; a.vz *= 0.6;
       if (a.vx > VMAX) a.vx = VMAX; else if (a.vx < -VMAX) a.vx = -VMAX;
       if (a.vy > VMAX) a.vy = VMAX; else if (a.vy < -VMAX) a.vy = -VMAX;
@@ -365,6 +381,47 @@
     camera.aspect = W / H; camera.updateProjectionMatrix();
     renderer.setSize(W, H); composer.setSize(W, H); labelRenderer.setSize(W, H);
   });
+
+  /* ---------- grouping (クラスタ) ---------- */
+  var GK3 = { contains: 1, covers: 1, category: 1, role: 1 };
+  var groupMode3 = false;
+  function fibSlot(i, n, R) {
+    var off = 2 / n, y = i * off - 1 + off / 2;
+    var rr = Math.sqrt(Math.max(0, 1 - y * y)), phi = i * 2.399963229;
+    return [Math.cos(phi) * rr * R, y * R, Math.sin(phi) * rr * R];
+  }
+  function computeBase(l) {
+    if (groupMode3 && GK3[l.kind] && l.target.group !== l.source.id) return BLACK.clone();
+    return baseLinkColor(l);
+  }
+  function recolorLinks() {
+    for (var i = 0; i < links.length; i++) links[i].baseCol = computeBase(links[i]);
+    writeLinkColors(selectedId ? G.neighborSet(selectedId) : null);
+  }
+  function assignGroups3d(axis) {
+    nodes.forEach(function (n) { n.group = null; n.isGroupCenter = false; n.slot = null; });
+    if (axis === 'none') { groupMode3 = false; recolorLinks(); reheat(1); return; }
+    var map = {};
+    nodes.forEach(function (n) {
+      if (n.anchor) return;
+      var refs = n.anchorRefs || [], g = null;
+      for (var i = 0; i < refs.length; i++) { var t = byId[refs[i]]; if (t && t.type === axis) { g = refs[i]; break; } }
+      n.group = g; if (g) (map[g] || (map[g] = [])).push(n);
+    });
+    var ids = Object.keys(map); ids.sort(function (a, b) { return map[b].length - map[a].length; });
+    var cnt = ids.length || 1, Rg = Math.max(170, cnt * 20);
+    ids.forEach(function (id, i) {
+      var sl = fibSlot(i, cnt, Rg), node = byId[id];
+      node.isGroupCenter = true; node.slot = sl; node.x = sl[0]; node.y = sl[1]; node.z = sl[2];
+    });
+    nodes.forEach(function (n) {
+      if (n.group && byId[n.group]) { var c = byId[n.group]; n.x = c.x + (Math.random() - 0.5) * 40; n.y = c.y + (Math.random() - 0.5) * 40; n.z = c.z + (Math.random() - 0.5) * 40; }
+    });
+    groupMode3 = true; recolorLinks(); reheat(1);
+  }
+  var gsel = document.getElementById('group-axis');
+  if (gsel) gsel.addEventListener('change', function () { deselect(); assignGroups3d(gsel.value); });
+  assignGroups3d('product');
 
   /* ---------- loop ---------- */
   applyVisibility();

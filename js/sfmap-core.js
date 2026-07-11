@@ -63,6 +63,24 @@ window.SFMAPCore = (function () {
       (t.prereq || []).forEach(function (pid) { addLink(pid, t.id, 'prereq', 98, 0.20); });
     });
 
+    // ---- 重大性(機能量・優先度) → node weight (0..1) ----
+    // breadth   : いくつのグループ(製品/資格/概念/職種)にまたがるか = 機能量
+    // foundational: 何個のトピックがこれを前提にするか = 学習優先度(土台ほど重大)
+    // content   : 詳細ボリューム = 機能量
+    var prereqOut = {};
+    links.forEach(function (l) { if (l.kind === 'prereq') prereqOut[l.source.id] = (prereqOut[l.source.id] || 0) + 1; });
+    var maxScore = 1;
+    nodes.forEach(function (n) {
+      if (n.anchor) { n.importance = 0; return; }
+      var breadth = (n.anchorRefs || []).length;
+      var foundational = prereqOut[n.id] || 0;
+      var content = (n.detail || '').length;
+      var lvlW = n.level === 'advanced' ? 1.12 : (n.level === 'intermediate' ? 1.05 : 1.0);
+      n.importance = (1 + breadth * 0.9 + foundational * 1.3 + Math.min(content / 850, 3)) * lvlW;
+      if (n.importance > maxScore) maxScore = n.importance;
+    });
+    nodes.forEach(function (n) { n.weight = n.anchor ? 1 : Math.min(1, n.importance / maxScore); });
+
     var adj = {};
     nodes.forEach(function (n) { adj[n.id] = []; });
     links.forEach(function (l) {

@@ -39,6 +39,15 @@
   <!-- ===== Legend / Filter ===== -->
   <aside id="legend">
     <div class="legend-title">凡例 / フィルタ</div>
+    <div class="legend-sub">グループ化(枠で囲む)</div>
+    <select id="group-axis" class="group-select">
+      <option value="product">製品ごと</option>
+      <option value="cert">認定資格ごと</option>
+      <option value="concept">概念ごと</option>
+      <option value="role">職種ごと</option>
+      <option value="none">グループ化しない</option>
+    </select>
+    <div class="legend-sub">種別</div>
     <div id="legend-types"></div>
     <div class="legend-sub">レベル</div>
     <div id="legend-levels" class="lvl-row">
@@ -51,6 +60,11 @@
       <div class="ll-row"><span class="ll-line contains"></span>包含:グループがトピックを束ねる</div>
       <div class="ll-row"><span class="ll-line prereq"></span>前提:学習の順序 →</div>
       <div class="ll-row"><span class="ll-line rel"></span>グループ同士の関係</div>
+    </div>
+    <div class="legend-sub">円の大きさ = 学習の重大性</div>
+    <div class="link-legend">
+      <div class="ll-row"><span class="ll-size s"></span>小 = 個別・限定的な機能</div>
+      <div class="ll-row"><span class="ll-size l"></span>大 = 機能量が多い/多くの土台になる重要トピック</div>
     </div>
     <div class="legend-hint">クリック=詳細 / ドラッグ=移動<br>ホイール=ズーム / 背景ドラッグ=パン</div>
   </aside>

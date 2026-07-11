@@ -126,6 +126,9 @@ body{
 }
 .legend-title{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
 .legend-sub{font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--text-faint);margin:12px 0 7px;text-transform:uppercase}
+.group-select{width:100%;height:34px;padding:0 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-size:12.5px;font-family:inherit;cursor:pointer;outline:none;transition:border-color .15s}
+.group-select:hover{border-color:var(--border-strong)}
+.group-select:focus{border-color:var(--accent)}
 .type-chip{
   display:flex;align-items:center;gap:9px;width:100%;
   padding:6px 8px;margin-bottom:3px;border-radius:9px;border:1px solid transparent;
@@ -251,6 +254,10 @@ body{
 .ll-line.covers{border-top:1.5px solid var(--c-cert)}
 .ll-line.prereq{border-top:2px dashed #c9954a}
 .ll-line.rel{border-top:1.5px solid var(--text-faint);opacity:.6}
+.ll-size{width:24px;flex:none;display:flex;align-items:center;justify-content:center}
+.ll-size::before{content:"";border-radius:50%;background:radial-gradient(circle at 35% 30%,#8fc4ff,#3f7fd6);box-shadow:0 0 6px rgba(96,165,250,.6)}
+.ll-size.s::before{width:6px;height:6px}
+.ll-size.l::before{width:15px;height:15px}
 
 /* ===== Help Modal ===== */
 .modal{position:absolute;inset:0;z-index:60;display:grid;place-items:center;

@@ -36,6 +36,8 @@
     this.highlight = null;         // Set of node ids, or null
     this.selectedId = null;
     this.visiblePredicate = null;  // fn(node)->bool
+    this.groupMode = false;        // グループ化(包含クラスタ)表示
+    this.groupCenters = [];        // グループ中心ノードの配列
 
     // physics
     this.alpha = 1;
@@ -101,25 +103,42 @@
       }
     }
 
-    // links (spring)
+    // links (spring). グループ化中は「所属グループへの包含リンク」だけを強く働かせてクラスタを作る
+    var gm = this.groupMode;
     for (i = 0; i < links.length; i++) {
       var l = links[i];
       a = l._s; b = l._t;
       if (!a || !b) continue;
+      var target = l.len || 90, str = l.strength || 0.22;
+      if (gm) {
+        if (GROUP_KINDS[l.kind]) {
+          if (b.group === a.id) { target = 46; str = 0.6; }   // 主グループ=強い包含
+          else continue;                                       // 副グループ=レイアウトに影響させない(線は薄く描画)
+        } else if (l.kind === 'prereq') { str = 0.06; }
+        else { str = 0.04; }                                   // anchor同士は弱く
+      }
       dx = b.x - a.x; dy = b.y - a.y;
       dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      var target = l.len || 90;
-      force = (dist - target) / dist * alpha * (l.strength || 0.22);
+      force = (dist - target) / dist * alpha * str;
       var lx = dx * force, ly = dy * force;
       a.vx += lx; a.vy += ly;
       b.vx -= lx; b.vy -= ly;
     }
 
-    // centering gravity
-    for (i = 0; i < nodes.length; i++) {
-      a = nodes[i];
-      a.vx += (-a.x) * alpha * 0.019;
-      a.vy += (-a.y) * alpha * 0.019;
+    if (gm) {
+      // グループ中心をリング上の定位置へ、未所属ノードは弱く中央へ
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        if (a.isGroupCenter) { a.vx += (a.slotX - a.x) * alpha * 0.09; a.vy += (a.slotY - a.y) * alpha * 0.09; }
+        else if (!a.group) { a.vx += (-a.x) * alpha * 0.004; a.vy += (-a.y) * alpha * 0.004; }
+      }
+    } else {
+      // centering gravity
+      for (i = 0; i < nodes.length; i++) {
+        a = nodes[i];
+        a.vx += (-a.x) * alpha * 0.019;
+        a.vy += (-a.y) * alpha * 0.019;
+      }
     }
 
     // collision (soft, based on radius)
@@ -175,6 +194,46 @@
     requestAnimationFrame(this._loop);
   };
 
+  ForceGraph.prototype._drawHulls = function (s) {
+    var ctx = this.ctx, PAD = 24, i, k;
+    for (var g = 0; g < this.groupCenters.length; g++) {
+      var c = this.groupCenters[g];
+      if (!c || !this._isVisible(c)) continue;
+      var pts = [];
+      for (i = 0; i < this.nodes.length; i++) {
+        var n = this.nodes[i];
+        if (n.group === c.id && this._isVisible(n)) pts.push([n.x, n.y]);
+      }
+      pts.push([c.x, c.y]);
+      var hue = c.groupHue || 0;
+      var fill = 'hsla(' + hue + ',65%,58%,0.09)';
+      var stroke = 'hsla(' + hue + ',70%,63%,0.30)';
+      ctx.lineWidth = 1.4 / s; ctx.strokeStyle = stroke; ctx.fillStyle = fill;
+      if (pts.length <= 2) {
+        var cx = 0, cy = 0; for (i = 0; i < pts.length; i++) { cx += pts[i][0]; cy += pts[i][1]; }
+        cx /= pts.length; cy /= pts.length;
+        ctx.beginPath(); ctx.arc(cx, cy, PAD + 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        continue;
+      }
+      var hull = convexHull(pts);
+      var mx = 0, my = 0; for (i = 0; i < hull.length; i++) { mx += hull[i][0]; my += hull[i][1]; }
+      mx /= hull.length; my /= hull.length;
+      var ex = [];
+      for (i = 0; i < hull.length; i++) {
+        var ddx = hull[i][0] - mx, ddy = hull[i][1] - my, dd = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+        ex.push([hull[i][0] + ddx / dd * PAD, hull[i][1] + ddy / dd * PAD]);
+      }
+      var nn = ex.length;
+      ctx.beginPath();
+      ctx.moveTo((ex[nn - 1][0] + ex[0][0]) / 2, (ex[nn - 1][1] + ex[0][1]) / 2);
+      for (k = 0; k < nn; k++) {
+        var cur = ex[k], nxt = ex[(k + 1) % nn];
+        ctx.quadraticCurveTo(cur[0], cur[1], (cur[0] + nxt[0]) / 2, (cur[1] + nxt[1]) / 2);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  };
+
   ForceGraph.prototype._isVisible = function (n) {
     return this.visiblePredicate ? this.visiblePredicate(n) : true;
   };
@@ -190,11 +249,14 @@
     var hl = this.highlight;
     var hasHL = !!hl;
 
+    if (this.groupMode) this._drawHulls(s);
+
     // ---- links (種別で描き分け: 包含=グループ色の実線 / 前提=矢印付き破線 / 関連=淡色) ----
     for (var i = 0; i < this.links.length; i++) {
       var l = this.links[i], a = l._s, b = l._t;
       if (!a || !b) continue;
       if (!this._isVisible(a) || !this._isVisible(b)) continue;
+      if (this.groupMode && GROUP_KINDS[l.kind] && b.group !== a.id) continue; // 副グループ線は描かない
       var st = KIND[l.kind] || KIND.anchor;
       var lit = hasHL && hl.has(a.id) && hl.has(b.id);
       var col, al, w;
@@ -214,6 +276,20 @@
     ctx.setLineDash(EMPTY_DASH);
     ctx.globalAlpha = 1;
 
+    // ---- starfield glow (加算合成でノードをやわらかく発光させる) ----
+    ctx.globalCompositeOperation = 'lighter';
+    for (var gk = 0; gk < this.nodes.length; gk++) {
+      var gn = this.nodes[gk];
+      if (!this._isVisible(gn)) continue;
+      if (hasHL && !hl.has(gn.id)) continue;
+      var grr = Math.max(gn.r, 1.4 / s) * 2.0 + 1.4 / s;
+      ctx.globalAlpha = gn.anchor ? 0.13 : 0.085;
+      ctx.fillStyle = gn.color;
+      ctx.beginPath(); ctx.arc(gn.x, gn.y, grr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+
     // ---- nodes ----
     for (var k = 0; k < this.nodes.length; k++) {
       var n = this.nodes[k];
@@ -221,7 +297,7 @@
       var dim = hasHL && !hl.has(n.id);
       var isHover = n === this.hoverNode;
       var isSel = n.id === this.selectedId;
-      var r = n.r;
+      var r = Math.max(n.r, 1.4 / s); // ズームアウト時も星として見えるよう最小サイズを確保
 
       ctx.globalAlpha = dim ? 0.22 : 1;
 
@@ -249,12 +325,17 @@
         ctx.stroke();
       }
 
-      // labels — declutter: hubs first, details on zoom / hover / highlight
+      // labels — 星空セマンティックズーム: ズームするほど細かいトピックが順に見える
       var showLabel = false;
-      var th = n.anchor ? (n.type === 'cert' ? 0.9 : 0.46) : 1.25;
-      if (s > th) showLabel = true;
+      if (n.anchor) {
+        if (s > (n.type === 'cert' ? 0.85 : 0.42)) showLabel = true;
+      } else {
+        // 重要度(degree)が高いトピックから段階的にラベルを出す
+        var tth = n.deg >= 7 ? 0.85 : (n.deg >= 4 ? 1.25 : (n.deg >= 2 ? 1.75 : 2.3));
+        if (s > tth) showLabel = true;
+      }
       if (isHover || isSel || (hasHL && hl.has(n.id))) showLabel = true;
-      if (dim && s <= 1.35) showLabel = false;
+      if (dim && s <= 1.4) showLabel = false;
 
       if (showLabel) {
         var fs = (n.anchor ? 12 : 10.5) / s;
@@ -385,6 +466,10 @@
   ForceGraph.prototype.setHighlight = function (set) { this.highlight = set; };
   ForceGraph.prototype.setSelected = function (id) { this.selectedId = id; };
   ForceGraph.prototype.setVisible = function (fn) { this.visiblePredicate = fn; this.reheat(0.2); };
+  ForceGraph.prototype.setGrouping = function (on, centers) {
+    this.groupMode = !!on; this.groupCenters = centers || [];
+    this._userInteracted = false; this._didAutoFit = false; this.reheat(1);
+  };
 
   ForceGraph.prototype.fit = function (pad) {
     pad = pad || 70;
@@ -427,6 +512,18 @@
     anchor:   { a: 0.16, w: 1.2, dash: false, col: null, arrow: false }
   };
   var EMPTY_DASH = [];
+  var GROUP_KINDS = { contains: 1, covers: 1, category: 1, role: 1 };
+
+  // Andrew's monotone chain convex hull
+  function convexHull(pts) {
+    if (pts.length < 3) return pts.slice();
+    pts = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], up = [], i, p;
+    for (i = 0; i < pts.length; i++) { p = pts[i]; while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (i = pts.length - 1; i >= 0; i--) { p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    lo.pop(); up.pop(); return lo.concat(up);
+  }
 
   function drawArrow(ctx, a, b, col, al, s) {
     var dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;

@@ -79,10 +79,29 @@
     (t.prereq || []).forEach(function (pid) { addLink(pid, t.id, 'prereq', 98, 0.20); });
   });
 
-  /* ---------- radii by degree ---------- */
+  /* ---------- radii: グループ=degree / トピック=重大性(機能量・優先度) ---------- */
+  // breadth=またがるグループ数(機能量) / foundational=前提にされる回数(優先度) / content=詳細量
+  var prereqOut = {};
+  links.forEach(function (l) { if (l.kind === 'prereq') prereqOut[l._s.id] = (prereqOut[l._s.id] || 0) + 1; });
+  var maxScore = 1;
   nodes.forEach(function (n) {
-    var base = { concept: 13, product: 12.5, role: 12, cert: 8.5, topic: 5.2 }[n.type];
-    n.r = base + Math.min(6, Math.sqrt(n.deg) * (n.anchor ? 1.4 : 0.9));
+    if (n.anchor) { n.importance = 0; return; }
+    var breadth = (n.anchorRefs || []).length;
+    var foundational = prereqOut[n.id] || 0;
+    var content = (n.detail || '').length;
+    var lvlW = n.level === 'advanced' ? 1.12 : (n.level === 'intermediate' ? 1.05 : 1.0);
+    n.importance = (1 + breadth * 0.9 + foundational * 1.3 + Math.min(content / 850, 3)) * lvlW;
+    if (n.importance > maxScore) maxScore = n.importance;
+  });
+  nodes.forEach(function (n) {
+    if (n.anchor) {
+      var base = { concept: 13, product: 12.5, role: 12, cert: 8.5 }[n.type] || 11;
+      n.r = base + Math.min(6, Math.sqrt(n.deg) * 1.4);
+      n.weight = 1;
+    } else {
+      n.weight = Math.min(1, n.importance / maxScore);
+      n.r = 3.4 + Math.sqrt(n.weight) * 9.6;   // 重大性で 3.4〜13.0
+    }
   });
 
   /* ---------- adjacency for panel ---------- */
@@ -396,6 +415,55 @@
       else graph.fit(80);
     });
   });
+
+  /* ============================================================
+     GROUPING — トピックをグループの枠(囲い)で入れ子にする
+     ============================================================ */
+  var groupRefit = null;
+  function refitSoon() {
+    if (groupRefit) clearInterval(groupRefit);
+    var k = 0;
+    groupRefit = setInterval(function () {
+      if (graph._userInteracted) { clearInterval(groupRefit); return; }
+      graph.fit(80);
+      if (++k > 16) clearInterval(groupRefit);
+    }, 380);
+  }
+  function assignGroups(axis) {
+    nodes.forEach(function (n) { n.group = null; n.isGroupCenter = false; n.slotX = undefined; n.slotY = undefined; n.groupHue = undefined; });
+    if (axis === 'none') { graph.setGrouping(false, []); refitSoon(); return; }
+    var map = {};
+    nodes.forEach(function (n) {
+      if (n.anchor) return;
+      var refs = n.anchorRefs || [], g = null;
+      for (var i = 0; i < refs.length; i++) { var t = byId[refs[i]]; if (t && t.type === axis) { g = refs[i]; break; } }
+      n.group = g;
+      if (g) (map[g] || (map[g] = [])).push(n);
+    });
+    var ids = Object.keys(map);
+    ids.sort(function (a, b) { return map[b].length - map[a].length; });
+    var cnt = ids.length || 1;
+    var R = Math.max(360, cnt * 66);
+    var centers = [];
+    ids.forEach(function (id, i) {
+      var ang = (i / cnt) * Math.PI * 2 - Math.PI / 2;
+      var node = byId[id];
+      node.isGroupCenter = true;
+      node.slotX = Math.cos(ang) * R; node.slotY = Math.sin(ang) * R;
+      node.groupHue = Math.round((i / cnt) * 360);
+      node.x = node.slotX; node.y = node.slotY;
+      centers.push(node);
+    });
+    // 各トピックを所属グループの中心付近に配置し、クラスタ形成を速く・きれいに
+    nodes.forEach(function (n) {
+      if (n.group && byId[n.group]) { var c = byId[n.group]; n.x = c.slotX + (Math.random() - 0.5) * 90; n.y = c.slotY + (Math.random() - 0.5) * 90; }
+    });
+    graph.setGrouping(true, centers);
+    refitSoon();
+  }
+  var groupSel = document.getElementById('group-axis');
+  if (groupSel) groupSel.addEventListener('change', function () { deselect(); assignGroups(groupSel.value); });
+  assignGroups('product'); // 既定は「製品ごと」にグループ化して枠で囲む
 
   /* ============================================================
      THEME
