@@ -254,20 +254,34 @@
   var alpha = 1, running = true;
   function physics() {
     var i, j, a, b, dx, dy, dz, d2, dist, f;
-    var K = 620, MAXF = 190;
+    var K = 620, MAXF = 190, CS = 800;
+    // 空間グリッドで近傍セルのみ反発を計算(総当たり O(n²) → ほぼ O(n)。クラスタが離れているほど効く)
+    var grid = {};
     for (i = 0; i < N; i++) {
       a = nodes[i];
-      for (j = i + 1; j < N; j++) {
-        b = nodes[j];
-        dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
-        d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; d2 = dx * dx + dy * dy + dz * dz + 0.01; }
-        if (d2 > 640000) continue;
-        dist = Math.sqrt(d2);
-        f = (K / d2) * alpha * a.chg * b.chg; if (f > MAXF) f = MAXF;
-        var fx = dx / dist * f, fy = dy / dist * f, fz = dz / dist * f;
-        a.vx -= fx; a.vy -= fy; a.vz -= fz;
-        b.vx += fx; b.vy += fy; b.vz += fz;
+      a._cx = Math.floor(a.x / CS); a._cy = Math.floor(a.y / CS); a._cz = Math.floor(a.z / CS);
+      var key = (a._cx + 64) + (a._cy + 64) * 128 + (a._cz + 64) * 16384;
+      (grid[key] || (grid[key] = [])).push(i);
+    }
+    for (i = 0; i < N; i++) {
+      a = nodes[i];
+      var bx = a._cx + 64, by = a._cy + 64, bz = a._cz + 64;
+      for (var ox = -1; ox <= 1; ox++) for (var oy = -1; oy <= 1; oy++) for (var oz = -1; oz <= 1; oz++) {
+        var cell = grid[(bx + ox) + (by + oy) * 128 + (bz + oz) * 16384];
+        if (!cell) continue;
+        for (var ci = 0; ci < cell.length; ci++) {
+          j = cell[ci]; if (j <= i) continue;   // 各ペアを1回だけ処理
+          b = nodes[j];
+          dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
+          d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; d2 = dx * dx + dy * dy + dz * dz + 0.01; }
+          if (d2 > 640000) continue;
+          dist = Math.sqrt(d2);
+          f = (K / d2) * alpha * a.chg * b.chg; if (f > MAXF) f = MAXF;
+          var fx = dx / dist * f, fy = dy / dist * f, fz = dz / dist * f;
+          a.vx -= fx; a.vy -= fy; a.vz -= fz;
+          b.vx += fx; b.vy += fy; b.vz += fz;
+        }
       }
     }
     for (i = 0; i < links.length; i++) {
