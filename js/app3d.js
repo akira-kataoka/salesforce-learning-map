@@ -142,43 +142,83 @@
     }
   })();
 
-  /* ---------- node meshes ---------- */
-  var sphereGeo = new THREE.SphereGeometry(1, 18, 18);
-  var group = new THREE.Group(); scene.add(group);
-  nodes.forEach(function (n) {
-    var mat = new THREE.MeshStandardMaterial({
-      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.36 : 0.22,
-      metalness: 0.0, roughness: 0.52, transparent: true, opacity: 0.97
+  /* ---------- nodes: InstancedMesh(球) + Points(グロー/リング)。1万ノードでも数ドローコール ---------- */
+  var sphereGeo = new THREE.SphereGeometry(1, 16, 16);
+  var sphereMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.0, roughness: 0.55, transparent: true, opacity: 0.98 });
+  var spheres = new THREE.InstancedMesh(sphereGeo, sphereMat, N);
+  spheres.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  spheres.frustumCulled = false;
+  scene.add(spheres);
+  // サイズ可変の加算ポイント(グロー/リング)用の軽量シェーダ
+  function makePointMat(tex) {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: tex } },
+      vertexShader: 'attribute float size; attribute vec3 acolor; varying vec3 vC; void main(){ vC=acolor; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=min(size*(900.0/max(1.0,-mv.z)),470.0); gl_Position=projectionMatrix*mv; }',
+      fragmentShader: 'uniform sampler2D map; varying vec3 vC; void main(){ float a=texture2D(map,gl_PointCoord).a; if(a<0.01)discard; gl_FragColor=vec4(vC,1.0)*a; }',
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true
     });
-    var mesh = new THREE.Mesh(sphereGeo, mat);
-    mesh.scale.setScalar(n.r);
-    mesh.position.set(n.x, n.y, n.z);
-    mesh.userData.node = n;
-    n.mesh = mesh; n.mat = mat; n.baseEmissive = mat.emissiveIntensity;
-    group.add(mesh);
-    // やわらかいグロー(星のにじみ) — 加算スプライトをノードの子として付ける
-    var glowMat = new THREE.SpriteMaterial({ map: GLOW_TEX, color: n.dispCol, transparent: true, opacity: n.anchor ? 0.26 : 0.075, blending: THREE.AdditiveBlending, depthWrite: false });
-    var glow = new THREE.Sprite(glowMat);
-    glow.scale.setScalar(n.anchor ? 3.4 : 2.6);
-    mesh.add(glow);
-    n.glowMat = glowMat; n.baseGlow = glowMat.opacity;
-    // 習得/フロンティアの縁取りリング(既定は非表示)
-    if (!n.anchor) {
-      var ringMat = new THREE.SpriteMaterial({ map: RING_TEX, color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-      var ring = new THREE.Sprite(ringMat); ring.scale.setScalar(2.7); mesh.add(ring);
-      n.ringMat = ringMat; n.ring = ring;
-    }
-    // anchor labels
+  }
+  var gGeo = new THREE.BufferGeometry();
+  var gpos = new Float32Array(N * 3), gcol = new Float32Array(N * 3), gsz = new Float32Array(N);
+  gGeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3));
+  gGeo.setAttribute('acolor', new THREE.BufferAttribute(gcol, 3));
+  gGeo.setAttribute('size', new THREE.BufferAttribute(gsz, 1));
+  var glowPoints = new THREE.Points(gGeo, makePointMat(GLOW_TEX)); glowPoints.frustumCulled = false; glowPoints.renderOrder = 2; scene.add(glowPoints);
+  var rGeo = new THREE.BufferGeometry();
+  var rpos = new Float32Array(N * 3), rcol = new Float32Array(N * 3), rsz = new Float32Array(N);
+  rGeo.setAttribute('position', new THREE.BufferAttribute(rpos, 3));
+  rGeo.setAttribute('acolor', new THREE.BufferAttribute(rcol, 3));
+  rGeo.setAttribute('size', new THREE.BufferAttribute(rsz, 1));
+  var ringPoints = new THREE.Points(rGeo, makePointMat(RING_TEX)); ringPoints.frustumCulled = false; ringPoints.renderOrder = 3; scene.add(ringPoints);
+
+  var labelRoot = new THREE.Group(); scene.add(labelRoot);
+  nodes.forEach(function (n, i) {
+    n.idx = i; n.vis = true; n.dim = false; n.scaleMul = 1;
+    n.glowBase = n.anchor ? 0.5 : 0.34;
+    n.glowSizeBase = n.r * (n.anchor ? 3.4 : 2.9);
+    n.ringSizeBase = n.r * 3.6;
+    n.sphColorEff = n.dispCol.clone();
+    n.glowColor = n.dispCol.clone(); n.glowOpacity = n.glowBase;
+    n.ringColor = MASTERY.clone(); n.ringOpacity = 0;
     if (n.anchor) {
       var el = document.createElement('div');
       el.className = 'node-label'; el.textContent = n.label;
-      var lo = new THREE.CSS2DObject(el);
-      lo.position.set(0, n.r + 3.5, 0);
-      mesh.add(lo);
-      n.labelEl = el;
-      el.style.opacity = (n.type === 'cert') ? '0' : '0.9'; // 資格ラベルは既定で非表示(ハイライト時に表示)
+      var lo = new THREE.CSS2DObject(el); lo.position.set(n.x, n.y + n.r + 4, n.z);
+      labelRoot.add(lo);
+      n.labelEl = el; n.labelObj = lo;
+      el.style.opacity = (n.type === 'cert') ? '0' : '0.9';
     }
   });
+
+  // 毎フレーム: ノードの位置/色/サイズを InstancedMesh と Points に反映(習得の呼吸・フロンティアの明滅も内包)
+  var _m4 = new THREE.Matrix4(), _q0 = new THREE.Quaternion(), _sv = new THREE.Vector3(), _pv = new THREE.Vector3();
+  function syncNodes(now) {
+    var bs = 0.94 + 0.1 * Math.sin(now * 0.0016);           // 習得リングの呼吸
+    var sh = 0.6 + 0.5 * (0.5 + 0.5 * Math.sin(now * 0.0025)); // フロンティアの明滅係数
+    for (var i = 0; i < N; i++) {
+      var n = nodes[i];
+      var sc = n.vis ? n.r * n.scaleMul : 0.0001;
+      _pv.set(n.x, n.y, n.z); _sv.set(sc, sc, sc); _m4.compose(_pv, _q0, _sv);
+      spheres.setMatrixAt(i, _m4);
+      spheres.setColorAt(i, n.sphColorEff);
+      var b = i * 3;
+      gpos[b] = n.x; gpos[b + 1] = n.y; gpos[b + 2] = n.z;
+      var go = n.vis ? n.glowOpacity : 0;
+      gsz[i] = n.vis ? n.glowSizeBase * n.scaleMul : 0;
+      gcol[b] = n.glowColor.r * go; gcol[b + 1] = n.glowColor.g * go; gcol[b + 2] = n.glowColor.b * go;
+      rpos[b] = n.x; rpos[b + 1] = n.y; rpos[b + 2] = n.z;
+      var ro = n.vis ? n.ringOpacity : 0, rscale = 1;
+      if (ro > 0.001 && n.learned) rscale = bs;
+      else if (ro > 0.001 && n.frontier) ro *= sh;
+      rsz[i] = ro > 0.001 ? n.ringSizeBase * rscale : 0;
+      rcol[b] = n.ringColor.r * ro; rcol[b + 1] = n.ringColor.g * ro; rcol[b + 2] = n.ringColor.b * ro;
+      if (n.labelObj) n.labelObj.position.set(n.x, n.y + n.r + 4, n.z);
+    }
+    spheres.instanceMatrix.needsUpdate = true;
+    if (spheres.instanceColor) spheres.instanceColor.needsUpdate = true;
+    gGeo.attributes.position.needsUpdate = true; gGeo.attributes.size.needsUpdate = true; gGeo.attributes.acolor.needsUpdate = true;
+    rGeo.attributes.position.needsUpdate = true; rGeo.attributes.size.needsUpdate = true; rGeo.attributes.acolor.needsUpdate = true;
+  }
 
   /* ---------- links ---------- */
   var GRAY = new THREE.Color(0x33405e), AMBER = new THREE.Color(0xd0a24a);
@@ -302,7 +342,6 @@
       if (a.vz > VMAX) a.vz = VMAX; else if (a.vz < -VMAX) a.vz = -VMAX;
       a.x += a.vx; a.y += a.vy; a.z += a.vz;
       if (!isFinite(a.x) || !isFinite(a.y) || !isFinite(a.z)) { a.x = (Math.random() - 0.5) * 120; a.y = (Math.random() - 0.5) * 120; a.z = (Math.random() - 0.5) * 120; a.vx = a.vy = a.vz = 0; }
-      a.mesh.position.set(a.x, a.y, a.z);
     }
     alpha += (0 - alpha) * 0.02;
     if (alpha < 0.004) { alpha = 0; running = false; }
@@ -350,15 +389,14 @@
       n.learned = !!learned[n.id];
       n.frontier = isFrontier(n);
       if (n.learned) count++;
-      n.mat.opacity = 0.96;
-      n.mat.emissiveIntensity = n.baseEmissive * (n.learned ? 1.35 : 1);
-      if (n.glowMat) { n.glowMat.color.copy(n.learned ? MASTERY : n.dispCol); n.glowMat.opacity = n.learned ? n.baseGlow * 1.7 : n.baseGlow; }
+      n.dim = false;
+      n.sphColorEff.copy(n.dispCol);
+      n.glowColor.copy(n.learned ? MASTERY : n.dispCol);
+      n.glowOpacity = n.learned ? n.glowBase * 1.5 : n.glowBase;
       if (n.labelEl) n.labelEl.style.opacity = (n.type === 'cert') ? '0' : '0.9';
-      if (n.ringMat) {
-        if (n.learned) { n.ringMat.color.copy(MASTERY); n.ringMat.opacity = 0.9; }
-        else if (n.frontier) { n.ringMat.color.copy(FRONTIER); n.ringMat.opacity = 0.7; }
-        else { n.ringMat.opacity = 0; }
-      }
+      if (!n.anchor && n.learned) { n.ringColor.copy(MASTERY); n.ringOpacity = 0.9; }
+      else if (!n.anchor && n.frontier) { n.ringColor.copy(FRONTIER); n.ringOpacity = 0.7; }
+      else n.ringOpacity = 0;
     });
     recolorBase();
     if (!selectedId) { writeLinkColors(null); curHL = null; }
@@ -370,7 +408,7 @@
     var cp = camera.position;
     for (var i = 0; i < N; i++) {
       var n = nodes[i]; if (!n.labelEl) continue;
-      if (!n.mesh.visible) { n.labelEl.style.opacity = '0'; continue; }
+      if (!n.vis) { n.labelEl.style.opacity = '0'; continue; }
       var dx = n.x - cp.x, dy = n.y - cp.y, dz = n.z - cp.z;
       var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       var f = d < 950 ? 1 : (d > 1750 ? 0 : 1 - (d - 950) / 800);   // 近い=はっきり / 遠い=消える
@@ -387,14 +425,18 @@
     curHL = hl;
     nodes.forEach(function (n) {
       var dim = hl && !hl[n.id];
-      n.mat.opacity = dim ? 0.12 : 0.96;
-      n.mat.emissiveIntensity = dim ? 0.03 : (n.id === selectedId ? 1.0 : n.baseEmissive * (n.learned ? 1.35 : 1));
+      n.dim = dim;
       var role = roleMap && roleMap[n.id];
-      if (n.glowMat) {
-        n.glowMat.opacity = dim ? 0.03 : (n.id === selectedId ? 0.98 : (n.learned ? n.baseGlow * 1.7 : n.baseGlow));
-        n.glowMat.color.copy(role === 'anc' ? PATHCOL : role === 'desc' ? FRONTIER : (n.learned ? MASTERY : n.dispCol));
+      if (dim) {
+        n.sphColorEff.copy(n.dispCol).multiplyScalar(0.15);
+        n.glowColor.copy(n.dispCol); n.glowOpacity = 0.025;
+        n.ringOpacity = 0;
+      } else {
+        n.sphColorEff.copy(n.dispCol);
+        n.glowColor.copy(role === 'anc' ? PATHCOL : role === 'desc' ? FRONTIER : (n.learned ? MASTERY : n.dispCol));
+        n.glowOpacity = (n.id === selectedId) ? n.glowBase * 2.1 : (n.learned ? n.glowBase * 1.5 : n.glowBase);
+        n.ringOpacity = n.learned ? 0.9 : (n.frontier ? 0.7 : 0);
       }
-      if (n.ringMat) n.ringMat.opacity = dim ? 0 : (n.learned ? 0.9 : n.frontier ? 0.7 : 0);
       if (n.labelEl) n.labelEl.style.opacity = dim ? '0.05' : (n.type === 'cert' ? '0.85' : '0.9');
     });
     writeLinkColors(hl);
@@ -467,17 +509,17 @@
     mouse.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
     mouse.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
-    var vis = []; for (var i = 0; i < N; i++) if (nodes[i].mesh.visible) vis.push(nodes[i].mesh);
-    var hit = ray.intersectObjects(vis, false);
-    return hit.length ? hit[0].object.userData.node : null;
+    var hit = ray.intersectObject(spheres, false);
+    for (var k = 0; k < hit.length; k++) { var id = hit[k].instanceId; if (id != null && nodes[id] && nodes[id].vis) return nodes[id]; }
+    return null;
   }
   renderer.domElement.addEventListener('pointermove', function (ev) {
     if (downXY) { if (Math.abs(ev.clientX - downXY.x) + Math.abs(ev.clientY - downXY.y) > 4) moved = true; }
     var n = pick(ev);
     if (n !== hoverNode) {
-      if (hoverNode) hoverNode.mesh.scale.setScalar(hoverNode.r);
+      if (hoverNode) hoverNode.scaleMul = 1;
       hoverNode = n;
-      if (n) n.mesh.scale.setScalar(n.r * 1.14);
+      if (n) n.scaleMul = 1.18;
       renderer.domElement.style.cursor = n ? 'pointer' : 'grab';
     }
     if (n) {
@@ -495,7 +537,7 @@
     if (!moved) { var n = pick(ev); if (n) selectNode(n.id, false); else deselect(); }
     downXY = null;
   });
-  renderer.domElement.addEventListener('pointerleave', function () { tooltip.classList.add('hidden'); if (hoverNode) { hoverNode.mesh.scale.setScalar(hoverNode.r); hoverNode = null; } });
+  renderer.domElement.addEventListener('pointerleave', function () { tooltip.classList.add('hidden'); if (hoverNode) { hoverNode.scaleMul = 1; hoverNode = null; } });
 
   /* ---------- filters (legend) ---------- */
   var typeEnabled = { product: true, role: true, cert: true, concept: true, topic: true };
@@ -514,15 +556,10 @@
     return false; // 紐づく種別がすべて非表示 → このトピックも消える
   }
   function applyVisibility() {
-    nodes.forEach(function (n) { n.mesh.visible = nodeVisible(n); });
-    // hide links whose endpoint is hidden by pushing them off-screen color black
-    for (var i = 0; i < links.length; i++) {
-      var l = links[i], vis = l.source.mesh.visible && l.target.mesh.visible;
-      if (!vis) { lcol[i * 6] = lcol[i * 6 + 1] = lcol[i * 6 + 2] = lcol[i * 6 + 3] = lcol[i * 6 + 4] = lcol[i * 6 + 5] = 0; }
-    }
+    nodes.forEach(function (n) { n.vis = nodeVisible(n); });
     writeLinkColors(selectedId ? G.neighborSet(selectedId) : null);
-    // re-blackout hidden after writeLinkColors
-    for (i = 0; i < links.length; i++) { var ll = links[i]; if (!(ll.source.mesh.visible && ll.target.mesh.visible)) { lcol[i * 6] = lcol[i * 6 + 1] = lcol[i * 6 + 2] = lcol[i * 6 + 3] = lcol[i * 6 + 4] = lcol[i * 6 + 5] = 0; } }
+    // 端点が非表示のリンクは黒(=不可視)に
+    for (var i = 0; i < links.length; i++) { var ll = links[i]; if (!(ll.source.vis && ll.target.vis)) { lcol[i * 6] = lcol[i * 6 + 1] = lcol[i * 6 + 2] = lcol[i * 6 + 3] = lcol[i * 6 + 4] = lcol[i * 6 + 5] = 0; } }
     lgeo.attributes.color.needsUpdate = true;
     var v = nodes.filter(nodeVisible).length;
     document.getElementById('stats').textContent = v + ' / ' + N + ' ノード · ' + links.length + ' リンク · 3D';
@@ -608,7 +645,7 @@
     var pool = (activePath && activePath.length) ? activePath : links;
     var tries = 0, l = null;
     do { l = pool[(Math.random() * pool.length) | 0]; tries++; }
-    while (tries < 12 && l && (!l.source.mesh.visible || !l.target.mesh.visible));
+    while (tries < 12 && l && (!l.source.vis || !l.target.vis));
     p.l = l; p.t = 0; p.spd = 0.006 + Math.random() * 0.016;
     var base = (activePath && activePath.length) ? PATHCOL : (l ? l.source.col : PULSE_TINT);
     p.col = base.clone().lerp(PULSE_TINT, 0.4);
@@ -617,7 +654,7 @@
   function updatePulses() {
     for (var i = 0; i < PULSE_N; i++) {
       var p = pulses[i], l = p.l;
-      if (!l || !l.source.mesh.visible || !l.target.mesh.visible) { respawnPulse(p); l = p.l; if (!l) { ppos[i * 3] = ppos[i * 3 + 1] = ppos[i * 3 + 2] = 99999; continue; } }
+      if (!l || !l.source.vis || !l.target.vis) { respawnPulse(p); l = p.l; if (!l) { ppos[i * 3] = ppos[i * 3 + 1] = ppos[i * 3 + 2] = 99999; continue; } }
       p.t += p.spd;
       if (p.t >= 1) { respawnPulse(p); l = p.l; if (!l) continue; }
       var a = l.source, b = l.target, t = p.t, mt = t * t * (3 - 2 * t); // smooth
@@ -644,21 +681,12 @@
   /* ---------- loop ---------- */
   applyVisibility();
   refreshStates();
-  function breathe(now) {
-    // 習得ノードはゆっくり呼吸、フロンティアはやわらかく明滅(点滅・ストロボは避ける)
-    var bs = 0.94 + 0.1 * Math.sin(now * 0.0016);
-    var sh = 0.42 + 0.28 * (0.5 + 0.5 * Math.sin(now * 0.0025));
-    for (var i = 0; i < N; i++) {
-      var n = nodes[i]; if (!n.ring || n.ringMat.opacity <= 0.001) continue;
-      if (n.learned) n.ring.scale.setScalar(2.7 * bs);
-      else if (n.frontier) n.ringMat.opacity = sh;
-    }
-  }
   function animate() {
     requestAnimationFrame(animate);
+    var now = (window.performance && performance.now) ? performance.now() : 0;
     if (running) { physics(); updateLinkPositions(); }
+    syncNodes(now);
     updatePulses();
-    breathe((window.performance && performance.now) ? performance.now() : 0);
     if (focusAnim) {
       focusAnim.t += 0.05;
       var e = focusAnim.t >= 1 ? 1 : (1 - Math.pow(1 - focusAnim.t, 3));
