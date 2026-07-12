@@ -24,16 +24,29 @@
     var tex = new THREE.CanvasTexture(c); tex.needsUpdate = true; return tex;
   }
 
-  /* ---------- seed 3D positions (golden-spiral shell) + radii ---------- */
+  /* ---------- seed 3D positions: ハブを球面に、トピックは主ハブの近くに置いて最初からクラスタ化 ---------- */
   var N = nodes.length;
+  // 主ハブ(製品優先、なければ最初のアンカー)
+  var primaryHub = {};
+  nodes.forEach(function (n) {
+    if (n.anchor) return;
+    var refs = n.anchorRefs || [], prod = null, first = null;
+    for (var i = 0; i < refs.length; i++) { var a = byId[refs[i]]; if (!a) continue; if (!first) first = a.id; if (a.type === 'product') { prod = a.id; break; } }
+    primaryHub[n.id] = prod || first || null;
+  });
+  // ハブをフィボナッチ球に配置(クラスタの核)
+  var hubList = nodes.filter(function (n) { return n.anchor; });
+  var HR = 620;
+  hubList.forEach(function (h, i) {
+    var y = 1 - (i / Math.max(1, hubList.length - 1)) * 2, rr = Math.sqrt(Math.max(0, 1 - y * y)), ph = i * 2.399963229;
+    h.x = Math.cos(ph) * rr * HR; h.y = y * HR * 0.82; h.z = Math.sin(ph) * rr * HR;
+  });
   nodes.forEach(function (n, i) {
-    var t = (i + 0.5) / N;
-    var th = Math.acos(1 - 2 * t);
-    var ph = i * 2.399963229;              // golden angle
-    var rr = 150 + (i % 40) * 2.8;
-    n.x = rr * Math.sin(th) * Math.cos(ph);
-    n.y = rr * Math.sin(th) * Math.sin(ph);
-    n.z = rr * Math.cos(th);
+    if (!n.anchor) {
+      var h = primaryHub[n.id] && byId[primaryHub[n.id]];
+      if (h) { n.x = h.x + (Math.random() - 0.5) * 95; n.y = h.y + (Math.random() - 0.5) * 95; n.z = h.z + (Math.random() - 0.5) * 95; }
+      else { n.x = (Math.random() - 0.5) * 200; n.y = (Math.random() - 0.5) * 200; n.z = (Math.random() - 0.5) * 200; }
+    }
     n.vx = n.vy = n.vz = 0;
     if (n.anchor) {
       var base = { concept: 5.4, product: 5.2, role: 5.0, cert: 3.5 }[n.type] || 5;
@@ -42,8 +55,8 @@
       // トピックは重大度(sig)を順位で均等化した weight でサイズを大きく変える: 1.5〜9.0
       n.r = 1.5 + n.weight * 7.5;
     }
-    // 反発の質量: ハブ(種別)ほど強く反発させ、中央に固まらず神経節のように広がる
-    n.chg = n.anchor ? 3.1 : 1.0;
+    // 反発の質量: ハブ(種別)ほど強く反発 → クラスタ同士が離れて「まとまり」が見える
+    n.chg = n.anchor ? 5.5 : 1.0;
     n.col = new THREE.Color(n.color);
     // 表示色 = 種別色に「深さの色」を少し混ぜる(種別=色相 / 深さ=色味の変化)
     n.dispCol = n.anchor ? n.col.clone() : n.col.clone().lerp(depthColorFor(n.depthNorm || 0), 0.28 * (n.depthNorm || 0) + 0.06);
@@ -67,8 +80,8 @@
   var scene = new THREE.Scene();
   var DARK = { bg: 0x080a12, fog: 0.0013, bloom: 0.26, thr: 0.68 };
 
-  var camera = new THREE.PerspectiveCamera(58, W / H, 1, 6000);
-  var DIST0 = 580;
+  var camera = new THREE.PerspectiveCamera(56, W / H, 1, 9000);
+  var DIST0 = 1220;
   camera.position.set(0, 0, DIST0);
 
   var controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -76,12 +89,14 @@
   controls.dampingFactor = 0.08;
   controls.rotateSpeed = 0.6;
   controls.minDistance = 60;
-  controls.maxDistance = 1600;
+  controls.maxDistance = 3200;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.4;
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  var pl = new THREE.PointLight(0xffffff, 0.5); pl.position.set(200, 200, 300); scene.add(pl);
+  // やわらかなグラデーション照明(空=クール/地=ディープ)でプラスチック感のあるハイライトを避ける
+  scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+  var hemi = new THREE.HemisphereLight(0xa6c8ff, 0x1a1230, 0.9); scene.add(hemi);
+  var pl = new THREE.PointLight(0xcfe0ff, 0.22); pl.position.set(320, 420, 520); scene.add(pl);
 
   /* ---------- soft radial glow texture (星のにじみ・オーラに使い回す) ---------- */
   function makeGlowTexture() {
@@ -132,8 +147,8 @@
   var group = new THREE.Group(); scene.add(group);
   nodes.forEach(function (n) {
     var mat = new THREE.MeshStandardMaterial({
-      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.4 : 0.2,
-      metalness: 0.3, roughness: 0.4, transparent: true, opacity: 0.96
+      color: n.dispCol, emissive: n.dispCol, emissiveIntensity: n.anchor ? 0.36 : 0.22,
+      metalness: 0.0, roughness: 0.52, transparent: true, opacity: 0.97
     });
     var mesh = new THREE.Mesh(sphereGeo, mat);
     mesh.scale.setScalar(n.r);
@@ -171,22 +186,26 @@
   var lcol = new Float32Array(links.length * 6);
   // 製品/資格/概念/職種→トピックはグループ色で描く(包含)。前提=アンバー、アンカー間=グレー
   function baseLinkColor(l) {
+    if (l.secondary) return new THREE.Color(0x090c15);   // 副ハブの橋は既定でほぼ不可視(選択時のみ表示)
     if (l.kind === 'contains') return l.source.col.clone().multiplyScalar(0.5);
     if (l.kind === 'covers') return l.source.col.clone().multiplyScalar(0.4);
     if (l.kind === 'category') return l.source.col.clone().multiplyScalar(0.34);
     if (l.kind === 'role') return l.source.col.clone().multiplyScalar(0.3);
-    if (l.kind === 'prereq') return AMBER.clone().multiplyScalar(0.5);
-    return GRAY.clone().multiplyScalar(0.6);
+    if (l.kind === 'prereq') return AMBER.clone().multiplyScalar(0.45);
+    return GRAY.clone().multiplyScalar(0.28);   // ハブ同士の線は淡く(中央の交差を抑える)
   }
   links.forEach(function (l) { l.baseCol = baseLinkColor(l); });
-  // 関連が強いほど近く、弱い/無関係ほど遠く。前提・包含は短く強く引き寄せ、ハブ同士は遠ざける
+  // 主ハブへ強く束ね、副ハブへは細い橋 → クラスタ(まとまり)を形成(primaryHub はシード時に算出済み)
   links.forEach(function (l) {
-    if (l.kind === 'anchor') { l.len = 340; l.strength = 0.03; }          // 種別ハブ同士は遠く弱く
-    else if (l.kind === 'prereq') { l.len = 58; l.strength = 0.24; }      // 前提の連なりは最も近く
-    else if (l.kind === 'contains') { l.len = 74; l.strength = 0.15; }    // 製品⊃トピックは近く
-    else if (l.kind === 'covers') { l.len = 86; l.strength = 0.12; }
-    else { l.len = 98; l.strength = 0.10; }                                // 概念/職種は少し緩く
+    if (l.kind === 'anchor') { l.len = 400; l.strength = 0.018; }         // 種別ハブ同士は遠く弱く(クラスタを離す)
+    else if (l.kind === 'prereq') { l.len = 56; l.strength = 0.16; }      // 前提の連なりは近く
+    else {                                                                 // ハブ ⊃ トピック
+      if (primaryHub[l.target.id] === l.source.id) { l.len = 56; l.strength = 0.26; } // 主ハブへ強く=まとまり
+      else { l.len = 240; l.strength = 0.008; l.secondary = true; }        // 副ハブへは弱く、既定では非表示
+    }
   });
+  // 副ハブへの橋は既定で見えないように(選択時のみ光る)。クラスタの塊がくっきり見える
+  links.forEach(function (l) { l.baseCol = baseLinkColor(l); });
   var lgeo = new THREE.BufferGeometry();
   lgeo.setAttribute('position', new THREE.BufferAttribute(lpos, 3));
   lgeo.setAttribute('color', new THREE.BufferAttribute(lcol, 3));
@@ -235,7 +254,7 @@
   var alpha = 1, running = true;
   function physics() {
     var i, j, a, b, dx, dy, dz, d2, dist, f;
-    var K = 520, MAXF = 130;
+    var K = 620, MAXF = 190;
     for (i = 0; i < N; i++) {
       a = nodes[i];
       for (j = i + 1; j < N; j++) {
@@ -243,7 +262,7 @@
         dx = b.x - a.x; dy = b.y - a.y; dz = b.z - a.z;
         d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; d2 = dx * dx + dy * dy + dz * dz + 0.01; }
-        if (d2 > 360000) continue;
+        if (d2 > 640000) continue;
         dist = Math.sqrt(d2);
         f = (K / d2) * alpha * a.chg * b.chg; if (f > MAXF) f = MAXF;
         var fx = dx / dist * f, fy = dy / dist * f, fz = dz / dist * f;
@@ -262,7 +281,7 @@
     var VMAX = 14;
     for (i = 0; i < N; i++) {
       a = nodes[i];
-      a.vx += (-a.x) * alpha * 0.0022; a.vy += (-a.y) * alpha * 0.0022; a.vz += (-a.z) * alpha * 0.0022;
+      a.vx += (-a.x) * alpha * 0.0009; a.vy += (-a.y) * alpha * 0.0009; a.vz += (-a.z) * alpha * 0.0009;
       a.vx *= 0.6; a.vy *= 0.6; a.vz *= 0.6;
       if (a.vx > VMAX) a.vx = VMAX; else if (a.vx < -VMAX) a.vx = -VMAX;
       if (a.vy > VMAX) a.vy = VMAX; else if (a.vy < -VMAX) a.vy = -VMAX;
@@ -340,7 +359,7 @@
       if (!n.mesh.visible) { n.labelEl.style.opacity = '0'; continue; }
       var dx = n.x - cp.x, dy = n.y - cp.y, dz = n.z - cp.z;
       var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      var f = d < 340 ? 1 : (d > 760 ? 0 : 1 - (d - 340) / 420);   // 近い=はっきり / 遠い=消える
+      var f = d < 950 ? 1 : (d > 1750 ? 0 : 1 - (d - 950) / 800);   // 近い=はっきり / 遠い=消える
       if (curHL) f *= curHL[n.id] ? 1 : 0.04;
       else if (n.type === 'cert') f = 0;                            // 資格ラベルは選択時のみ
       if (n.id === selectedId || n === hoverNode) f = 1;
@@ -388,7 +407,7 @@
     var on = !!learned[n.id];
     var btn = document.createElement('button');
     btn.className = 'btn-learn' + (on ? ' is-learned' : '');
-    btn.textContent = on ? '習得済み ✓' : '習得した — 灯をともす';
+    btn.textContent = on ? '習得済 ✓' : '未習得';
     btn.addEventListener('click', function () { toggleLearned(n); });
     bar.appendChild(btn);
     var host = panelContent.querySelector('.p-depth');
@@ -401,7 +420,7 @@
     refreshStates();
     if (selectedId) highlightFor(selectedId);
     var btn = panelContent.querySelector('.btn-learn');
-    if (btn) { var on = !!learned[n.id]; btn.classList.toggle('is-learned', on); btn.textContent = on ? '習得済み ✓' : '習得した — 灯をともす'; }
+    if (btn) { var on = !!learned[n.id]; btn.classList.toggle('is-learned', on); btn.textContent = on ? '習得済 ✓' : '未習得'; }
   }
   function cascadePulse(n) {
     var out = links.filter(function (l) { return l.source.id === n.id || l.target.id === n.id; });
